@@ -69,3 +69,15 @@ def test_producer_partition():
     msg = kc.poll()
     assert  msg.value() == "testing"
     kc.close()
+
+def test_producer_default_stream():
+    p = Producer({'socket.timeout.ms':10, 'streams.producer.default.stream': '/stream',
+                  'default.topic.config': {'message.timeout.ms': 10, 'auto.offset.reset': 'earliest'}})
+    p.produce(topic='topic1', value='TestDefaultStream')
+    p.poll(1)
+    kc = Consumer({'group.id':'test', 'socket.timeout.ms':'100','enable.auto.commit': False,
+                   'session.timeout.ms': 1000, 'default.topic.config':{'auto.offset.reset': 'earliest'}})
+    kc.assign([TopicPartition("/stream:topic1", 0)])
+    msg = kc.poll()
+    assert  msg.value() == "TestDefaultStream"
+    kc.close()
