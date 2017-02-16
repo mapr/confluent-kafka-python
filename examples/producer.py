@@ -24,16 +24,16 @@ from confluent_kafka import Producer
 import sys
 
 if __name__ == '__main__':
-    if len(sys.argv) != 3:
-        sys.stderr.write('Usage: %s <bootstrap-brokers> <topic>\n' % sys.argv[0])
+    if len(sys.argv) != 2:
+        sys.stderr.write('Usage: %s <topic>\n' % sys.argv[0])
         sys.exit(1)
 
-    broker = sys.argv[1]
-    topic  = sys.argv[2]
+    topic  = sys.argv[1]
 
     # Producer configuration
     # See https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md
-    conf = {'bootstrap.servers': broker}
+    # Remove bootstrap.servers config
+    conf = {}
 
     # Create Producer instance
     p = Producer(**conf)
@@ -49,11 +49,23 @@ if __name__ == '__main__':
                              (msg.topic(), msg.partition()))
 
     # Read lines from stdin, produce each line to Kafka
-    for line in sys.stdin:
+    # Empty lines are ignored
+	while True:
+        try:
+            line = sys.stdin.readline()
+        except KeyboardInterrupt:
+            # CTRL + C
+	        break
+
+        if not line:
+            break
+
+        if line == '\n':
+            continue
+
         try:
             # Produce line (without newline)
             p.produce(topic, line.rstrip(), callback=delivery_callback)
-            
         except BufferError as e:
             sys.stderr.write('%% Local producer queue is full ' \
                              '(%d messages awaiting delivery): try again\n' %

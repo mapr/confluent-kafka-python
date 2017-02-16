@@ -23,18 +23,17 @@ from confluent_kafka import Consumer, KafkaException, KafkaError
 import sys
 
 if __name__ == '__main__':
-    if len(sys.argv) < 4:
-        sys.stderr.write('Usage: %s <bootstrap-brokers> <group> <topic1> <topic2> ..\n' % sys.argv[0])
+    if len(sys.argv) < 3:
+        sys.stderr.write('Usage: %s <group> <topic1> [<topic2> [..]]\n' % sys.argv[0])
         sys.exit(1)
 
-    broker = sys.argv[1]
-    group  = sys.argv[2]
-    topics = sys.argv[3:]
+    group  = sys.argv[1]
+    topics = sys.argv[2:]
 
     # Consumer configuration
     # See https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md
-    conf = {'bootstrap.servers': broker, 'group.id': group, 'session.timeout.ms': 6000,
-            'default.topic.config': {'auto.offset.reset': 'smallest'}}
+    conf = {'group.id': group, 'session.timeout.ms': 6000,
+            'default.topic.config': {'auto.offset.reset': 'earliest'}}
 
 
     # Create Consumer instance
