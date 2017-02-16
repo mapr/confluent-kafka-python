@@ -233,7 +233,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Verifiable Python Consumer')
     parser.add_argument('--topic', action='append', type=str, required=True)
     parser.add_argument('--group-id', dest='group.id', required=True)
-    parser.add_argument('--broker-list', dest='bootstrap.servers', required=True)
+    parser.add_argument('--broker-list', dest='bootstrap.servers', required=False)
     parser.add_argument('--session-timeout', type=int, dest='session.timeout.ms', default=6000)
     parser.add_argument('--enable-autocommit', action='store_true', dest='enable.auto.commit', default=False)
     parser.add_argument('--max-messages', type=int, dest='max_messages', default=-1)

@@ -66,7 +66,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Verifiable Python Producer')
     parser.add_argument('--topic', type=str, required=True)
     parser.add_argument('--throughput', type=int, default=0)
-    parser.add_argument('--broker-list', dest='bootstrap.servers', required=True)
+    parser.add_argument('--broker-list', dest='bootstrap.servers', required=False)
     parser.add_argument('--max-messages', type=int, dest='max_msgs', default=1000000) # avoid infinite
     parser.add_argument('--value-prefix', dest='value_prefix', type=str, default=None)
     parser.add_argument('--acks', type=int, dest='topic.request.required.acks', default=-1)
