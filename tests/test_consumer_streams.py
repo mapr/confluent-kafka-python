@@ -74,3 +74,21 @@ def test_consumer_commit():
     offsets_last = c.committed(partitions)
     assert offsets_base == offsets_last
     c.close()
+
+
+def test_consumer_default_stream():
+    kc = Consumer({'group.id':'test', 'socket.timeout.ms':'100','enable.auto.commit': False,
+                   'session.timeout.ms': 1000, 'default.topic.config':{'auto.offset.reset': 'earliest'}, 'streams.consumer.default.stream': '/test_stream'})
+    kc.subscribe(['topic1'])
+    msg = kc.poll()
+    assert msg.value() == "Hello Python!"
+    kc.close()
+
+
+def test_consumer_poll_zero():
+    kc = Consumer({'group.id':'test', 'socket.timeout.ms':'100',
+                   'session.timeout.ms': 1000, 'default.topic.config':{'auto.offset.reset': 'earliest'}}) # Avoid close() blocking too long
+    kc.subscribe(["/test_stream:topic1"])
+    msg = kc.poll(0)
+    assert  msg  == None
+    kc.close()
