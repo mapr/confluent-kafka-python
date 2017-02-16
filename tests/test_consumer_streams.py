@@ -38,3 +38,39 @@ def test_consumer_on_commit():
     kc.commit(msg)
     kc.close()
     assert on_commit_cb.called
+
+
+def test_consumer_fail_commited():
+    kc = Consumer({'group.id':'test', 'socket.timeout.ms':'100','enable.auto.commit': False,
+                   'session.timeout.ms': 1000, 'default.topic.config':{'auto.offset.reset': 'earliest'}})
+    partitions = list(map(lambda p: TopicPartition("/test_stream:topic1", p), range(0,1)))
+    kc.subscribe(["/test_stream:topic1"])
+    msg = kc.poll()
+    kc.commit(msg, async=False)
+    kc.close()
+    c = Consumer({'group.id':'test', 'socket.timeout.ms':'100','enable.auto.commit': False,
+                  'session.timeout.ms': 1000, 'default.topic.config':{'auto.offset.reset': 'earliest'}})
+    try:
+        offsets_last = c.committed(partitions)
+    except KafkaException as e:
+        print e
+        assert e.args[0].code() == KafkaError._TIMED_OUT
+    c.close()
+
+
+def test_consumer_commit():
+    kc = Consumer({'group.id':'test', 'socket.timeout.ms':'100','enable.auto.commit': False,
+                   'session.timeout.ms': 1000, 'default.topic.config':{'auto.offset.reset': 'earliest'}})
+    partitions = list(map(lambda p: TopicPartition("/test_stream:topic1", p), range(0,1)))
+    kc.assign(partitions)
+    msg = kc.poll()
+    kc.commit(msg, async=False)
+    offsets_base = kc.position(partitions)
+    kc.close()
+    c = Consumer({'group.id':'test', 'socket.timeout.ms':'100','enable.auto.commit': False,
+                  'session.timeout.ms': 1000, # Avoid close() blocking too long
+                  'default.topic.config':{'auto.offset.reset': 'earliest'}})
+    c.assign(partitions)
+    offsets_last = c.committed(partitions)
+    assert offsets_base == offsets_last
+    c.close()
