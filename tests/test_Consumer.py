@@ -1,6 +1,17 @@
 #!/usr/bin/env python
 
 from confluent_kafka import Consumer, TopicPartition, KafkaError, KafkaException
+import pytest
+import subprocess
+
+@pytest.fixture(autouse=True)
+def resource_setup(request):
+    subprocess.call(['bash','-c', "maprcli stream topic create -path /stream -topic topic1"])
+    print("resource_setup")
+    def resource_teardown():
+        subprocess.check_call(['bash','-c', "maprcli stream topic delete -path /stream -topic topic1"])
+        print("resource_teardown")
+    request.addfinalizer(resource_teardown)
 
 
 def test_basic_api():
@@ -19,13 +30,13 @@ def test_basic_api():
                    'session.timeout.ms': 1000, # Avoid close() blocking too long
                    'on_commit': dummy_commit_cb})
 
-    kc.subscribe(["test"])
+    kc.subscribe(["/stream:topic1"])
     kc.unsubscribe()
 
     def dummy_assign_revoke (consumer, partitions):
         pass
 
-    kc.subscribe(["test"], on_assign=dummy_assign_revoke, on_revoke=dummy_assign_revoke)
+    kc.subscribe(["/stream:topic1"], on_assign=dummy_assign_revoke, on_revoke=dummy_assign_revoke)
     kc.unsubscribe()
 
     msg = kc.poll(timeout=0.001)
@@ -36,10 +47,9 @@ def test_basic_api():
     else:
         print('OK: consumed message')
 
-    partitions = list(map(lambda p: TopicPartition("test", p), range(0,100,3)))
+    partitions = list(map(lambda p: TopicPartition("/stream:topic1", p), range(0,100,3)))
     kc.assign(partitions)
 
-    kc.unassign()
 
     kc.commit(async=True)
 
@@ -49,7 +59,12 @@ def test_basic_api():
         assert e.args[0].code() in (KafkaError._TIMED_OUT, KafkaError._NO_OFFSET)
 
     # Get current position, should all be invalid.
-    kc.position(partitions)
+    try:
+        kc.position(partitions)
+    except KafkaException as e:
+        print e
+        assert e.args[0].code() == KafkaError.TOPIC_EXCEPTION
+
     assert len([p for p in partitions if p.offset == -1001]) == len(partitions)
 
     try:
