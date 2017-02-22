@@ -4,13 +4,24 @@ from confluent_kafka import Producer, Consumer,  KafkaError, KafkaException, Top
 import mock
 import pytest
 import subprocess
+import utils as u
 
+@pytest.fixture(scope="module", autouse=True)
+def create_stream(request):
+    u.new_stream('/stream', checked=True)
+    print("stream created")
+    def delete_stream():
+        u.delete_stream('/stream', checked=True)
+        print("stream deleted")
+    request.addfinalizer(delete_stream)
+    
+    
 @pytest.fixture(autouse=True)
 def resource_setup(request):
-    subprocess.call(['bash','-c', "maprcli stream topic create -path /stream -topic topic1"])
+    u.create_topic('/stream', 'topic1')
     print("resource_setup")
     def resource_teardown():
-        subprocess.check_call(['bash','-c', "maprcli stream topic delete -path /stream -topic topic1"])
+        u.delete_topic('/stream', 'topic1', checked=True)
         print("resource_teardown")
     request.addfinalizer(resource_teardown)
 
@@ -61,14 +72,15 @@ def test_producer_on_delivery():
 def test_producer_partition():
     p = Producer({'socket.timeout.ms':10,
                   'default.topic.config': {'message.timeout.ms': 10, 'auto.offset.reset': 'earliest'}})
-    p.produce(topic='/stream:topic3', value='testing', partition=0)
+    p.produce(topic='/stream:topic2', value='testing', partition=0)
     p.poll(1)
     kc = Consumer({'group.id':'test', 'socket.timeout.ms':'100','enable.auto.commit': False,
                    'session.timeout.ms': 1000, 'default.topic.config':{'auto.offset.reset': 'earliest'}})
-    kc.assign([TopicPartition("/stream:topic3", 0)])
+    kc.assign([TopicPartition("/stream:topic2", 0)])
     msg = kc.poll()
     assert  msg.value() == "testing"
     kc.close()
+
 
 def test_producer_default_stream():
     p = Producer({'socket.timeout.ms':10, 'streams.producer.default.stream': '/stream',

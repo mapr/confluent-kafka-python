@@ -3,13 +3,24 @@
 from confluent_kafka import Consumer, TopicPartition, KafkaError, KafkaException
 import pytest
 import subprocess
+import utils as u
 
+@pytest.fixture(scope="module", autouse=True)
+def create_stream(request):
+    u.new_stream('/stream', checked=True)
+    print("stream created")
+    def delete_stream():
+        u.delete_stream('/stream', checked=True)
+        print("stream deleted")
+    request.addfinalizer(delete_stream)
+    
+    
 @pytest.fixture(autouse=True)
 def resource_setup(request):
-    subprocess.call(['bash','-c', "maprcli stream topic create -path /stream -topic topic1"])
+    u.create_topic('/stream', 'topic1')
     print("resource_setup")
     def resource_teardown():
-        subprocess.check_call(['bash','-c', "maprcli stream topic delete -path /stream -topic topic1"])
+        u.delete_topic('/stream', 'topic1')
         print("resource_teardown")
     request.addfinalizer(resource_teardown)
 

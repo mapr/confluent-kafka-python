@@ -3,10 +3,21 @@ from confluent_kafka import Consumer, Producer, TopicPartition, KafkaError, Kafk
 import subprocess
 import pytest
 import mock
+import utils as u
 
+@pytest.fixture(scope="module", autouse=True)
+def create_stream(request):
+    u.new_stream('/test_stream', checked=True)
+    print("stream created")
+    def delete_stream():
+        u.delete_stream('/test_stream', checked=True)
+        print("stream deleted")
+    request.addfinalizer(delete_stream)
+    
+    
 @pytest.fixture(autouse=True)
 def resource_setup(request):
-    subprocess.call(['bash','-c', "maprcli stream topic create -path /test_stream -topic topic1"])
+    u.create_topic('/test_stream', 'topic1', checked=True)
     conf = {'default.topic.config':{'produce.offset.report': True, 'auto.offset.reset': 'latest'}}
     # Create producer
     p = Producer(**conf)
@@ -14,7 +25,7 @@ def resource_setup(request):
     p.flush()
     print("resource_setup")
     def resource_teardown():
-        subprocess.check_call(['bash','-c', "maprcli stream topic delete -path /test_stream -topic topic1"])
+        u.delete_topic('/test_stream', 'topic1')
         print("resource_teardown")
     request.addfinalizer(resource_teardown)
 
