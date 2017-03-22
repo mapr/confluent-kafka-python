@@ -115,12 +115,11 @@ def verify_producer():
 
 def verify_producer_performance(with_dr_cb=True):
     """ Time how long it takes to produce and delivery X messages """
-    conf = {'bootstrap.servers': bootstrap_servers,
-            'error_cb': error_cb}
+    conf = {'error_cb': error_cb}
 
     p = confluent_kafka.Producer(**conf)
 
-    topic = 'test'
+    topic = '/test_stream:topic3'
     msgcnt = 1000000
     msgsize = 100
     msg_pattern = 'test.py performance'
@@ -141,9 +140,9 @@ def verify_producer_performance(with_dr_cb=True):
     for i in range(0, msgcnt):
         try:
             if with_dr_cb:
-                p.produce('test', value=msg_payload, callback=dr.delivery)
+                p.produce(topic, value=msg_payload, callback=dr.delivery)
             else:
-                p.produce('test', value=msg_payload)
+                p.produce(topic, value=msg_payload)
         except BufferError as e:
             # Local queue is full (slow broker connection?)
             msgs_backpressure += 1
@@ -277,8 +276,7 @@ def verify_consumer():
 def verify_consumer_performance():
     """ Verify Consumer performance """
 
-    conf = {'bootstrap.servers': bootstrap_servers,
-            'group.id': uuid.uuid1(),
+    conf = {'group.id': uuid.uuid1(),
             'session.timeout.ms': 6000,
             'error_cb': error_cb,
             'default.topic.config': {
@@ -291,15 +289,13 @@ def verify_consumer_performance():
         print('on_assign:', len(partitions), 'partitions:')
         for p in partitions:
             print(' %s [%d] @ %d' % (p.topic, p.partition, p.offset))
-        consumer.assign(partitions)
 
     def my_on_revoke (consumer, partitions):
         print('on_revoke:', len(partitions), 'partitions:')
         for p in partitions:
             print(' %s [%d] @ %d' % (p.topic, p.partition, p.offset))
-        consumer.unassign()
 
-    c.subscribe(["test"], on_assign=my_on_assign, on_revoke=my_on_revoke)
+    c.subscribe(["/test_stream:topic3"], on_assign=my_on_assign, on_revoke=my_on_revoke)
 
     max_msgcnt = 1000000
     bytecnt = 0
@@ -361,12 +357,6 @@ if __name__ == '__main__':
 
     print('Using confluent_kafka module version %s (0x%x)' % confluent_kafka.version())
     print('Using librdkafka version %s (0x%x)' % confluent_kafka.libversion())
-
-    print('=' * 30, 'Verifying Producer', '=' * 30)
-    verify_producer()
-
-    print('=' * 30, 'Verifying Consumer', '=' * 30)
-    verify_consumer()
 
     print('=' * 30, 'Verifying Producer performance (with dr_cb)', '=' * 30)
     verify_producer_performance(with_dr_cb=True)

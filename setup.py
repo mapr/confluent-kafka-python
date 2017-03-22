@@ -10,7 +10,7 @@ module = Extension('confluent_kafka.cimpl',
                              'confluent_kafka/src/Producer.c',
                              'confluent_kafka/src/Consumer.c'])
 
-setup(name='confluent-kafka',
+setup(name='mapr-streams-python',
       version='0.9.2',
       description='Confluent\'s Apache Kafka client for Python',
       author='Confluent Inc',
