@@ -19,7 +19,7 @@
 # Example high-level Kafka 0.9 balanced Consumer
 #
 
-from confluent_kafka import Consumer, KafkaException, KafkaError
+from mapr_streams_python import Consumer, KafkaException, KafkaError
 import sys
 
 if __name__ == '__main__':

@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from confluent_kafka import TopicPartition
+from mapr_streams_python import TopicPartition
 
 def test_sort():
     """ TopicPartition sorting (rich comparator) """

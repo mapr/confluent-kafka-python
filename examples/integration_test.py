@@ -19,7 +19,7 @@
 
 """ Test script for confluent_kafka module """
 
-import confluent_kafka
+import mapr_streams_python
 import re
 import time
 import uuid
@@ -83,7 +83,7 @@ def verify_producer():
             'default.topic.config':{'produce.offset.report': True}}
 
     # Create producer
-    p = confluent_kafka.Producer(**conf)
+    p = mapr_streams_python.Producer(**conf)
     print('producer at %s' % p)
 
     # Produce some messages
@@ -117,7 +117,7 @@ def verify_producer_performance(with_dr_cb=True):
     """ Time how long it takes to produce and delivery X messages """
     conf = {'error_cb': error_cb}
 
-    p = confluent_kafka.Producer(**conf)
+    p = mapr_streams_python.Producer(**conf)
 
     topic = '/test_stream:topic3'
     msgcnt = 1000000
@@ -216,7 +216,7 @@ def verify_consumer():
             }}
 
     # Create consumer
-    c = confluent_kafka.Consumer(**conf)
+    c = mapr_streams_python.Consumer(**conf)
 
     # Subscribe to a list of topics
     c.subscribe(["test"])
@@ -233,7 +233,7 @@ def verify_consumer():
             raise Exception('Got timeout from poll() without a timeout set: %s' % msg)
 
         if msg.error():
-            if msg.error().code() == confluent_kafka.KafkaError._PARTITION_EOF:
+            if msg.error().code() == mapr_streams_python.KafkaError._PARTITION_EOF:
                 print('Reached end of %s [%d] at offset %d' % \
                       (msg.topic(), msg.partition(), msg.offset()))
                 break
@@ -263,8 +263,8 @@ def verify_consumer():
 
 
     # Start a new client and get the committed offsets
-    c = confluent_kafka.Consumer(**conf)
-    offsets = c.committed(list(map(lambda p: confluent_kafka.TopicPartition("test", p), range(0,3))))
+    c = mapr_streams_python.Consumer(**conf)
+    offsets = c.committed(list(map(lambda p: mapr_streams_python.TopicPartition("test", p), range(0, 3))))
     for tp in offsets:
         print(tp)
 
@@ -283,7 +283,7 @@ def verify_consumer_performance():
                 'auto.offset.reset': 'earliest'
             }}
 
-    c = confluent_kafka.Consumer(**conf)
+    c = mapr_streams_python.Consumer(**conf)
 
     def my_on_assign (consumer, partitions):
         print('on_assign:', len(partitions), 'partitions:')
@@ -318,11 +318,11 @@ def verify_consumer_performance():
                             (msgcnt, max_msgcnt))
 
         if msg.error():
-            if msg.error().code() == confluent_kafka.KafkaError._PARTITION_EOF:
+            if msg.error().code() == mapr_streams_python.KafkaError._PARTITION_EOF:
                 # Reached EOF for a partition, ignore.
                 continue
             else:
-                raise confluent_kafka.KafkaException(msg.error())
+                raise mapr_streams_python.KafkaException(msg.error())
 
 
         bytecnt += len(msg)
@@ -355,8 +355,8 @@ if __name__ == '__main__':
     if len(sys.argv) > 1:
         bootstrap_servers = sys.argv[1]
 
-    print('Using confluent_kafka module version %s (0x%x)' % confluent_kafka.version())
-    print('Using librdkafka version %s (0x%x)' % confluent_kafka.libversion())
+    print('Using confluent_kafka module version %s (0x%x)' % mapr_streams_python.version())
+    print('Using librdkafka version %s (0x%x)' % mapr_streams_python.libversion())
 
     print('=' * 30, 'Verifying Producer performance (with dr_cb)', '=' * 30)
     verify_producer_performance(with_dr_cb=True)

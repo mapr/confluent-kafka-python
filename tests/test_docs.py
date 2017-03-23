@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import confluent_kafka
+import mapr_streams_python
 import re
 from types import ModuleType
 
@@ -9,12 +9,12 @@ def test_verify_docs():
     """
     fails = 0
 
-    for n in dir(confluent_kafka):
+    for n in dir(mapr_streams_python):
         if n.startswith('__'):
             # Skip internals
             continue
 
-        o = confluent_kafka.__dict__.get(n)
+        o = mapr_streams_python.__dict__.get(n)
         d = o.__doc__
         if not d:
             print('Missing __doc__ for: %s (type %s)' % (n, type(o)))

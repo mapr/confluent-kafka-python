@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from confluent_kafka import Producer, KafkaError, KafkaException
+from mapr_streams_python import Producer, KafkaError, KafkaException
 import threading
 import time
 try:

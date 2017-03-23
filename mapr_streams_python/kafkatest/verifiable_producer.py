@@ -16,7 +16,7 @@
 #
 
 import argparse, time
-from confluent_kafka import Producer, KafkaError, KafkaException
+from mapr_streams_python import Producer, KafkaError, KafkaException
 from verifiable_client import VerifiableClient
 
 class VerifiableProducer(VerifiableClient):
