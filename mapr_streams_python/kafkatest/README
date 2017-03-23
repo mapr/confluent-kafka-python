@@ -1,0 +1,8 @@
+FIXME: Instructions on how to use this.
+
+
+Usage:
+
+   python -m mapr_streams_python.kafkatest.verifiable_consumer <options>
+
+   python -m mapr_streams_python.kafkatest.verifiable_producer <options>

@@ -1,4 +1,4 @@
-from confluent_kafka import Consumer, Producer, TopicPartition, KafkaError, KafkaException
+from mapr_streams_python import Consumer, Producer, TopicPartition, KafkaError, KafkaException
 import pytest
 import utils as u
 

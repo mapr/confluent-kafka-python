@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from confluent_kafka import Producer, Consumer,  KafkaError, KafkaException, TopicPartition
+from mapr_streams_python import Producer, KafkaError, KafkaException
 import mock
 import pytest
 import subprocess

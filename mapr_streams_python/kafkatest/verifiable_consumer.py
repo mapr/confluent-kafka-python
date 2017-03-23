@@ -16,7 +16,7 @@
 #
 
 import argparse, sys
-from confluent_kafka import Consumer, KafkaError, KafkaException
+from mapr_streams_python import Consumer, KafkaError, KafkaException
 from verifiable_client import VerifiableClient
 
 class VerifiableConsumer(VerifiableClient):

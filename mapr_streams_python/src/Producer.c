@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "confluent_kafka.h"
+#include "mapr_streams_python.h"
 
 
 /**

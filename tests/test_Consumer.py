@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from confluent_kafka import Consumer, TopicPartition, KafkaError, KafkaException
+from mapr_streams_python import Consumer, TopicPartition, KafkaError, KafkaException
 import pytest
 import subprocess
 import utils as u

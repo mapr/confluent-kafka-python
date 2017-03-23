@@ -4,11 +4,11 @@ from setuptools import setup, find_packages
 from distutils.core import Extension
 
 
-module = Extension('confluent_kafka.cimpl',
+module = Extension('mapr_streams_python.cimpl',
                     libraries= ['rdkafka'],
-                    sources=['confluent_kafka/src/confluent_kafka.c',
-                             'confluent_kafka/src/Producer.c',
-                             'confluent_kafka/src/Consumer.c'])
+                    sources=['mapr_streams_python/src/mapr_streams_python.c',
+                             'mapr_streams_python/src/Producer.c',
+                             'mapr_streams_python/src/Consumer.c'])
 
 setup(name='mapr-streams-python',
       version='0.9.2',
