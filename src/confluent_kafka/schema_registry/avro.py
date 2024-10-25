@@ -14,21 +14,22 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 from io import BytesIO
 from json import loads
 from struct import pack, unpack
-from typing import Dict, Any, List, Union
+from typing import Dict, Any, List, Union, Optional, Set
 
 from fastavro import (parse_schema,
                       schemaless_reader,
-                      schemaless_writer)
+                      schemaless_writer,
+                      validate)
 
 from . import (_MAGIC_BYTE,
                Schema,
                topic_subject_name_strategy, RegisteredSchema, RuleMode)
 from confluent_kafka.serialization import (SerializationError)
-from .serde import BaseSerializer, BaseDeserializer, RuleContext
+from .serde import BaseSerializer, BaseDeserializer, RuleContext, FieldType, \
+    FieldTransform
 
 
 class _ContextStringIO(BytesIO):
@@ -473,15 +474,88 @@ AvroSchema = Union[str, List[Any], Dict[Any, Any]]
 
 class AvroUtils(object):
     @staticmethod
-    def _transform(ctx: RuleContext, schema: AvroSchema, message: object, transform: str) -> object:
+    def _transform(ctx: RuleContext, schema: AvroSchema, message: Any, transform: FieldTransform) -> Any:
         if message is None or schema is None:
             return message
         pass
 
         field_ctx = ctx.current_field()
-        #if field_ctx is not None:
-        #    field_ctx.type = get_type(schema)
-        #if schema.
+        if field_ctx is not None:
+            field_ctx.type = AvroUtils._get_type(schema)
+        schema_type = schema["type"]
+        if schema_type == 'union':
+            subschema = AvroUtils._resolve_union(schema, message)
+            if subschema is None:
+                return message
+            return AvroUtils._transform(ctx, subschema, message, transform)
+        elif schema_type == 'array':
+            return [AvroUtils._transform(ctx, schema["items"], item, transform) for item in message]
+        elif schema_type == 'map':
+            return {key: AvroUtils._transform(ctx, schema["values"], value, transform) for key, value in message.items()}
+        elif schema_type == 'record':
+            return {field: AvroUtils._transform(ctx, schema["fields"][field], message[field], transform) for field in message}
+        else:
+            if field_ctx is not None:
+                rule_tags = ctx.rule.tags
+                if rule_tags is None or len(rule_tags) == 0 or not AvroUtils._disjoint(set(rule_tags), field_ctx.tags):
+                    return transform(ctx, field_ctx, message)
+            return message
+
+    @staticmethod
+    def _get_type(schema: AvroSchema) -> str:
+        schema_type = schema["type"]
+        if schema_type == 'record':
+            return FieldType.RECORD
+        elif schema_type == 'enum':
+            return FieldType.ENUM
+        elif schema_type == 'array':
+            return FieldType.ARRAY
+        elif schema_type == 'map':
+            return FieldType.MAP
+        elif schema_type == 'union':
+            return FieldType.COMBINED
+        elif schema_type == 'fixed':
+            return FieldType.FIXED
+        elif schema_type == 'string':
+            return FieldType.STRING
+        elif schema_type == 'bytes':
+            return FieldType.BYTES
+        elif schema_type == 'int':
+            return FieldType.INT
+        elif schema_type == 'long':
+            return FieldType.LONG
+        elif schema_type == 'float':
+            return FieldType.FLOAT
+        elif schema_type == 'double':
+            return FieldType.DOUBLE
+        elif schema_type == 'boolean':
+            return FieldType.BOOLEAN
+        elif schema_type == 'null':
+            return FieldType.NULL
+        else:
+            return FieldType.NULL
+
+    @staticmethod
+    def _disjoint(tags1: Set[str], tags2: Set[str]) -> bool:
+        for tag in tags1:
+            if tag in tags2:
+                return False
+        return True
+
+    @staticmethod
+    def _resolve_union(schema: AvroSchema, message: Any) -> Optional[AvroSchema]:
+        for subschema in schema:
+            if validate(message, subschema):
+                return subschema
+        return None
+
+
+
+
+
+
+
+
 
 
 

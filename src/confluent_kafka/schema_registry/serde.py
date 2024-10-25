@@ -18,13 +18,17 @@
 
 __all__ = ['BaseSerializer',
            'BaseDeserializer',
+           'FieldContext',
+           'FieldTransform',
+           'FieldTransformer',
+           'FieldType',
            'RuleAction',
            'RuleContext',
            'RuleExecutor']
 
 import logging
 from enum import Enum
-from typing import Callable, List, Optional, Set, Dict
+from typing import Callable, List, Optional, Set, Dict, Any
 
 from confluent_kafka.schema_registry import RegisteredSchema
 from confluent_kafka.schema_registry.schema_registry_client import RuleMode, \
@@ -57,7 +61,7 @@ class FieldType(str, Enum):
 class FieldContext(object):
     __slots__ = ['containing_message', 'full_name', 'name', 'type', 'tags']
 
-    def __init__(self, containing_message: object, full_name: str, name: str,
+    def __init__(self, containing_message: Any, full_name: str, name: str,
         type: FieldType, tags: Set[str]):
         self.containing_message = containing_message
         self.full_name = full_name
@@ -117,7 +121,7 @@ class RuleContext(object):
             return None
         return self._field_contexts[-1]
 
-    def enter_field(self, containing_message: object, full_name: str, name: str,
+    def enter_field(self, containing_message: Any, full_name: str, name: str,
         field_type: FieldType, tags: Optional[List[str]]) -> FieldContext:
         all_tags = set(tags if tags is not None else self._get_inline_tags(full_name))
         all_tags.update(self.get_tags(full_name))
@@ -133,7 +137,7 @@ class RuleContext(object):
             tags = self.target.schema.metadata.tags.tags
             for k, v in tags.items():
                 if wildcard_match(full_name, k):
-                    tags.update(v)
+                    result.update(v)
         return result
 
     def exit_field(self):
@@ -141,10 +145,10 @@ class RuleContext(object):
             self._field_contexts.pop()
 
 
-FieldTransform = Callable[[RuleContext, FieldContext, object], object]
+FieldTransform = Callable[[RuleContext, FieldContext, Any], Any]
 
 
-FieldTransformer = Callable[[RuleContext, FieldTransform, object], object]
+FieldTransformer = Callable[[RuleContext, FieldTransform, Any], Any]
 
 
 class RuleBase(object):
@@ -159,7 +163,7 @@ class RuleBase(object):
 
 
 class RuleExecutor(RuleBase):
-    def transform(self, ctx: RuleContext, message: object) -> object:
+    def transform(self, ctx: RuleContext, message: Any) -> Any:
         pass
 
 
@@ -167,7 +171,7 @@ class FieldRuleExecutor(RuleExecutor):
     def new_transform(self, ctx: RuleContext) -> FieldTransform:
         pass
 
-    def transform(self, ctx: RuleContext, message: object) -> object:
+    def transform(self, ctx: RuleContext, message: Any) -> Any:
         # TODO preserve source
         if ctx.rule_mode == RuleMode.WRITE or ctx.rule_mode == RuleMode.UPGRADE:
             for i in range(ctx.index):
@@ -194,7 +198,7 @@ class FieldRuleExecutor(RuleExecutor):
 
 
 class RuleAction(RuleBase):
-    def run(self, ctx: RuleContext, message: object, ex: Optional[Exception]):
+    def run(self, ctx: RuleContext, message: Any, ex: Optional[Exception]):
         pass
 
 
@@ -202,7 +206,7 @@ class ErrorAction(RuleAction):
     def type(self) -> str:
         return 'ERROR'
 
-    def run(self, ctx: RuleContext, message: object, ex: Optional[Exception]):
+    def run(self, ctx: RuleContext, message: Any, ex: Optional[Exception]):
         raise SerializationError(f"{ex}")
 
 
@@ -210,7 +214,7 @@ class NoneAction(RuleAction):
     def type(self) -> str:
         return 'NONE'
 
-    def run(self, ctx: RuleContext, message: object, ex: Optional[Exception]):
+    def run(self, ctx: RuleContext, message: Any, ex: Optional[Exception]):
         pass
 
 
@@ -259,7 +263,7 @@ class BaseSerde(object):
     def _execute_rules(self, ser_ctx: SerializationContext, subject: str,
         rule_mode: RuleMode,
         source: Optional[RegisteredSchema], target: Optional[RegisteredSchema],
-        message: object, inline_tags: Optional[Dict[str, Set[str]]]) -> object:
+        message: Any, inline_tags: Optional[Dict[str, Set[str]]]) -> Any:
         if message is None or target is None:
             return None
         rules: Optional[List[Rule]] = None
@@ -270,6 +274,12 @@ class BaseSerde(object):
             if source.schema.rule_set is not None:
                 rules = source.schema.rule_set.migration_rules
                 if rules is not None:
+                    rules = rules[:].reverse()
+        else:
+            if target.schema.rule_set is not None:
+                rules = target.schema.rule_set.domain_rules
+                if rule_mode == RuleMode.READ:
+                    # Execute read rules in reverse order for symmetry
                     rules = rules[:].reverse()
 
         if rules is None:
@@ -317,7 +327,7 @@ class BaseSerde(object):
         return message
 
     def _run_action(self, ctx: RuleContext, rule_mode: RuleMode, rule: Rule,
-        action: Optional[str], message: object,
+        action: Optional[str], message: Any,
         ex: Optional[Exception], default_action: str):
         action_name = self._get_rule_action_name(rule, rule_mode, action)
         if action_name is None:
@@ -422,7 +432,7 @@ class BaseDeserializer(BaseSerde, Deserializer):
         return result
 
     def _execute_migrations(self, ser_ctx: SerializationContext, subject: str,
-        migrations: List[Migration], message: object) -> object:
+        migrations: List[Migration], message: Any) -> Any:
         for migration in migrations:
             message = self._execute_rules(ser_ctx, subject, migration.rule_mode,
                                           migration.source, migration.target, message, None)

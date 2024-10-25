@@ -29,7 +29,7 @@ def wildcard_match(text: str, matcher: str) -> bool:
 
     Args:
         text (str): Text to match.
-        pattern (str): The wildcard string to match against.
+        matcher (str): The wildcard string to match against.
 
     Returns:
         bool: True if the text matches the pattern, False otherwise.
