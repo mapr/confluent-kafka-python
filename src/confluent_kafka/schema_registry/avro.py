@@ -14,6 +14,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import re
 from io import BytesIO
 from json import loads
 from struct import pack, unpack
@@ -84,6 +85,9 @@ def _resolve_named_schema(schema, schema_registry_client, named_schemas=None):
             _resolve_named_schema(referenced_schema.schema, schema_registry_client, named_schemas)
             parse_schema(loads(referenced_schema.schema.schema_str), named_schemas=named_schemas)
     return named_schemas
+
+
+AvroSchema = Union[str, List[Any], Dict[Any, Any]]
 
 
 class AvroSerializer(BaseSerializer):
@@ -319,8 +323,9 @@ class AvroSerializer(BaseSerializer):
             value = obj
 
         if latest_schema is not None:
+            parsed_schema = self._get_parsed_schema(latest_schema)
             value = self._execute_rules(ctx, subject, RuleMode.WRITE, None,
-                                        latest_schema, value, None)
+                                        latest_schema, value, AvroUtils.get_inline_tags(parsed_schema))
 
         with _ContextStringIO() as fo:
             # Write the magic byte and schema ID in network byte order (big endian)
@@ -330,7 +335,8 @@ class AvroSerializer(BaseSerializer):
 
             return fo.getvalue()
 
-    def _get_parsed_schema(self, schema: RegisteredSchema):
+    def _get_parsed_schema(self, schema: RegisteredSchema) -> AvroSchema:
+        # TODO RAY cache
         schema_dict = loads(schema.schema.schema_str)
         named_schemas = _resolve_named_schema(schema.schema, self._registry)
         parsed_schema = parse_schema(schema_dict, named_schemas=named_schemas)
@@ -469,41 +475,44 @@ class AvroDeserializer(BaseDeserializer):
             return obj_dict
 
 
-AvroSchema = Union[str, List[Any], Dict[Any, Any]]
-
-
 class AvroUtils(object):
     @staticmethod
     def _transform(ctx: RuleContext, schema: AvroSchema, message: Any, transform: FieldTransform) -> Any:
         if message is None or schema is None:
             return message
-        pass
-
         field_ctx = ctx.current_field()
         if field_ctx is not None:
             field_ctx.type = AvroUtils._get_type(schema)
-        schema_type = schema["type"]
-        if schema_type == 'union':
+        if isinstance(schema, list):
             subschema = AvroUtils._resolve_union(schema, message)
             if subschema is None:
                 return message
             return AvroUtils._transform(ctx, subschema, message, transform)
-        elif schema_type == 'array':
-            return [AvroUtils._transform(ctx, schema["items"], item, transform) for item in message]
-        elif schema_type == 'map':
-            return {key: AvroUtils._transform(ctx, schema["values"], value, transform) for key, value in message.items()}
-        elif schema_type == 'record':
-            return {field: AvroUtils._transform(ctx, schema["fields"][field], message[field], transform) for field in message}
-        else:
-            if field_ctx is not None:
-                rule_tags = ctx.rule.tags
-                if rule_tags is None or len(rule_tags) == 0 or not AvroUtils._disjoint(set(rule_tags), field_ctx.tags):
-                    return transform(ctx, field_ctx, message)
-            return message
+        elif isinstance(schema, dict):
+            schema_type = schema["type"]
+            if schema_type == 'array':
+                return [AvroUtils._transform(ctx, schema["items"], item, transform) for item in message]
+            elif schema_type == 'map':
+                return {key: AvroUtils._transform(ctx, schema["values"], value, transform) for key, value in message.items()}
+            elif schema_type == 'record':
+                return {field: AvroUtils._transform(ctx, schema["fields"][field], message[field], transform) for field in message}
+
+        if field_ctx is not None:
+            rule_tags = ctx.rule.tags
+            if rule_tags is None or len(rule_tags) == 0 or not AvroUtils._disjoint(set(rule_tags), field_ctx.tags):
+                return transform(ctx, field_ctx, message)
+        return message
 
     @staticmethod
     def _get_type(schema: AvroSchema) -> str:
-        schema_type = schema["type"]
+        if isinstance(schema, list):
+            return FieldType.COMBINED
+        elif isinstance(schema, dict):
+            schema_type = schema["type"]
+        else:
+            # string schemas; this could be either a named schema or a primitive type
+            schema_type = schema
+
         if schema_type == 'record':
             return FieldType.RECORD
         elif schema_type == 'enum':
@@ -548,6 +557,52 @@ class AvroUtils(object):
             if validate(message, subschema):
                 return subschema
         return None
+
+    @staticmethod
+    def get_inline_tags(schema: AvroSchema) -> Dict[str, Set[str]]:
+        inline_tags = {}
+        AvroUtils._get_inline_tags_recursively('', '', schema, inline_tags)
+        return inline_tags
+
+    @staticmethod
+    def _get_inline_tags_recursively(ns: str, name: str, schema: Optional[AvroSchema],
+        tags: Dict[str, Set[str]]):
+        if schema is None:
+            return
+        if isinstance(schema, list):
+            for subschema in schema:
+                AvroUtils._get_inline_tags_recursively(ns, name, subschema, tags)
+        elif not isinstance(schema, dict):
+            # string schemas; this could be either a named schema or a primitive type
+            return
+        else:
+            schema_type = schema["type"]
+            if schema_type == 'record':
+                record_ns = schema.get("namespace")
+                record_name = schema.get("name")
+                if record_ns is None:
+                    record_ns = AvroUtils.implied_namespace(name)
+                if record_ns is None:
+                    record_ns = ns
+                if record_ns != '' and not record_name.startswith(record_ns):
+                    record_name = f"{record_ns}.{record_name}"
+                fields = schema["fields"]
+                for field in fields:
+                    field_tags = field.get("confluent:tags")
+                    field_name = field.get("name")
+                    field_type = field.get("type")
+                    if field_tags is not None and field_name is not None:
+                        tags[record_name].update(field_tags)
+                    if field_type is not None:
+                        AvroUtils._get_inline_tags_recursively(record_ns, record_name, field_type, tags)
+
+
+    @staticmethod
+    def implied_namespace(name: str) -> Optional[str]:
+        match = re.match("^(.*)\.[^.]+$", name)
+        return match.group(1) if match else None
+
+
 
 
 

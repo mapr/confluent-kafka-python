@@ -10,7 +10,8 @@
             "type": [
                 "long",
                 "null"
-            ]
+            ],
+            "confluent:tags": [ "PII" ]
         },
         {
             "name": "name",
