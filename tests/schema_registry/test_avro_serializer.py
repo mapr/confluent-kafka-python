@@ -223,16 +223,6 @@ def test_avro_serializer_schema_loads_union(load_avsc):
     assert schema[1]["name"] == "RecordTwo"
 
 
-def test_avro_serializer_invalid_schema_type():
-    """
-    Ensures invalid schema types are rejected
-    """
-    conf = {'url': TEST_URL}
-    test_client = SchemaRegistryClient(conf)
-    with pytest.raises(TypeError, match="You must pass either schema string or schema object"):
-        AvroSerializer(test_client, 1)
-
-
 def test_avro_deserializer_invalid_schema_type():
     """
     Ensures invalid schema types are rejected

@@ -182,8 +182,6 @@ class JSONSerializer(BaseSerializer):
         elif isinstance(schema_str, Schema):
             self._schema = schema_str
             self._are_references_provided = bool(schema_str.references)
-        else:
-            raise TypeError('You must pass either str or Schema')
 
         self._registry = schema_registry_client
         self._rule_registry = rule_registry
@@ -227,10 +225,11 @@ class JSONSerializer(BaseSerializer):
             raise ValueError("Unrecognized properties: {}"
                              .format(", ".join(conf_copy.keys())))
 
-        schema_dict = json.loads(self._schema.schema_str)
-        schema_name = schema_dict.get('title', None)
-        if schema_name is None:
-            raise ValueError("Missing required JSON schema annotation title")
+        schema_dict = json.loads(self._schema.schema_str) if schema else None
+        if schema_dict:
+            schema_name = schema_dict.get('title', None)
+        else:
+            schema_name = None
 
         self._schema_name = schema_name
         self._parsed_schema = schema_dict

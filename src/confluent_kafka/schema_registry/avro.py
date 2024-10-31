@@ -197,15 +197,13 @@ class AvroSerializer(BaseSerializer):
                      'use.latest.with.metadata': None,
                      'subject.name.strategy': topic_subject_name_strategy}
 
-    def __init__(self, schema_registry_client, schema_str,
+    def __init__(self, schema_registry_client, schema_str=None,
         to_dict=None, conf=None, rule_registry=None):
         super().__init__()
         if isinstance(schema_str, str):
             schema = _schema_loads(schema_str)
         elif isinstance(schema_str, Schema):
             schema = schema_str
-        else:
-            raise TypeError('You must pass either schema string or schema object')
 
         self._registry = schema_registry_client
         self._rule_registry = rule_registry
@@ -248,23 +246,27 @@ class AvroSerializer(BaseSerializer):
             raise ValueError("Unrecognized properties: {}"
                              .format(", ".join(conf_copy.keys())))
 
-        schema_dict = loads(schema.schema_str)
-        named_schemas = _resolve_named_schema(schema, self._registry)
-        parsed_schema = parse_schema(schema_dict, named_schemas=named_schemas)
+        if schema:
+            schema_dict = loads(schema.schema_str)
+            named_schemas = _resolve_named_schema(schema, self._registry)
+            parsed_schema = parse_schema(schema_dict, named_schemas=named_schemas)
 
-        if isinstance(parsed_schema, list):
-            # if parsed_schema is a list, we have an Avro union and there
-            # is no valid schema name. This is fine because the only use of
-            # schema_name is for supplying the subject name to the registry
-            # and union types should use topic_subject_name_strategy, which
-            # just discards the schema name anyway
-            schema_name = None
+            if isinstance(parsed_schema, list):
+                # if parsed_schema is a list, we have an Avro union and there
+                # is no valid schema name. This is fine because the only use of
+                # schema_name is for supplying the subject name to the registry
+                # and union types should use topic_subject_name_strategy, which
+                # just discards the schema name anyway
+                schema_name = None
+            else:
+                # The Avro spec states primitives have a name equal to their type
+                # i.e. {"type": "string"} has a name of string.
+                # This function does not comply.
+                # https://github.com/fastavro/fastavro/issues/415
+                schema_name = parsed_schema.get("name", schema_dict["type"])
         else:
-            # The Avro spec states primitives have a name equal to their type
-            # i.e. {"type": "string"} has a name of string.
-            # This function does not comply.
-            # https://github.com/fastavro/fastavro/issues/415
-            schema_name = parsed_schema.get("name", schema_dict["type"])
+            schema_name = None
+            parsed_schema = None
 
         self._schema = schema
         self._schema_name = schema_name
@@ -385,7 +387,7 @@ class AvroDeserializer(BaseDeserializer):
     __slots__ = ['_reader_schema', '_from_dict', '_writer_schemas', '_return_record_name', '_schema']
 
     def __init__(self, schema_registry_client, schema_str=None,
-        from_dict=None, return_record_name=False, conf= None, rule_registry=None):
+        from_dict=None, return_record_name=False, conf=None, rule_registry=None):
         super().__init__()
         schema = None
         if schema_str is not None:
