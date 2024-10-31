@@ -23,7 +23,7 @@ import warnings
 from collections import deque
 from typing import Any, Set
 
-import confluent.meta_pb2 as meta_pb2
+import confluent_kafka.schema_registry.confluent.meta_pb2 as meta_pb2
 
 from google.protobuf.descriptor import Descriptor, FieldDescriptor
 from google.protobuf.message import DecodeError, Message
