@@ -21,17 +21,22 @@ import base64
 import struct
 import warnings
 from collections import deque
+from typing import Any, Set
 
-from google.protobuf.message import DecodeError
+import confluent.meta_pb2 as meta_pb2
+
+from google.protobuf.descriptor import Descriptor, FieldDescriptor
+from google.protobuf.message import DecodeError, Message
 from google.protobuf.message_factory import MessageFactory
 
 from . import (_MAGIC_BYTE,
                reference_subject_name_strategy,
                topic_subject_name_strategy,)
 from .schema_registry_client import (Schema,
-                                     SchemaReference)
+                                     SchemaReference, RuleKind)
 from confluent_kafka.serialization import SerializationError
-from .serde import BaseSerializer, BaseDeserializer
+from .serde import BaseSerializer, BaseDeserializer, RuleContext, \
+    FieldTransform, FieldType, RuleConditionError
 
 # Convert an int to bytes (inverse of ord())
 # Python3.chr() -> Unicode
@@ -458,6 +463,9 @@ class ProtobufSerializer(BaseSerializer):
             fo.write(message.SerializeToString())
             return fo.getvalue()
 
+    def _field_transform(self, rule_ctx, message, transform):
+        return ProtobufUtils.transform(rule_ctx, self._parsed_schema, message, transform)
+
 
 class ProtobufDeserializer(BaseDeserializer):
     """
@@ -657,3 +665,88 @@ class ProtobufDeserializer(BaseDeserializer):
                 raise SerializationError(str(e))
 
             return msg
+
+    def _field_transform(self, rule_ctx, message, transform):
+        return ProtobufUtils.transform(rule_ctx, self._parsed_schema, message, transform)
+
+
+class ProtobufUtils(object):
+    @staticmethod
+    def _transform(ctx: RuleContext, descriptor: Descriptor, message: Any, transform: FieldTransform) -> Any:
+        if message is None or descriptor is None:
+            return message
+        if isinstance(message, list):
+            return [ProtobufUtils._transform(ctx, descriptor, item, transform) for item in message]
+        if isinstance(message, dict):
+            return {key: ProtobufUtils._transform(ctx, descriptor, value, transform) for key, value in message.items()}
+        if isinstance(message, Message):
+            for fd in descriptor.fields:
+                ProtobufUtils._transform_field(ctx, fd, descriptor, message, transform)
+            return message
+        field_ctx = ctx.current_field()
+        if field_ctx is not None:
+            rule_tags = ctx.rule.tags
+            if rule_tags is None or len(rule_tags) == 0 or not ProtobufUtils._disjoint(set(rule_tags), field_ctx.tags):
+                transform(ctx, field_ctx, message)
+        return message
+
+    @staticmethod
+    def _transform_field(ctx: RuleContext, fd: FieldDescriptor, desc: Descriptor, message: Any, transform: FieldTransform):
+        try:
+            ctx.enter_field(
+                message,
+                fd.full_name,
+                fd.name,
+                ProtobufUtils.get_type(fd, desc),
+                ProtobufUtils.get_inline_tags(fd)
+            )
+            value = getattr(message, fd.name)
+            new_value = ProtobufUtils._transform(ctx, desc, value, transform)
+            if ctx.rule.kind == RuleKind.CONDITION:
+                if new_value is False:
+                    raise RuleConditionError(ctx.rule)
+            else:
+                setattr(message, fd.name, new_value)
+        finally:
+            ctx.exit_field()
+
+    @staticmethod
+    def get_type(fd: FieldDescriptor, desc: Descriptor) -> FieldType:
+        if desc._is_map_entry:
+            return FieldType.MAP
+        if fd.type == FieldDescriptor.TYPE_MESSAGE:
+            return FieldType.RECORD
+        if fd.type == FieldDescriptor.TYPE_ENUM:
+            return FieldType.ENUM
+        if fd.type == FieldDescriptor.TYPE_STRING:
+            return FieldType.STRING
+        if fd.type == FieldDescriptor.TYPE_BYTES:
+            return FieldType.BYTES
+        if fd.type in (FieldDescriptor.TYPE_INT32, FieldDescriptor.TYPE_SINT32,
+                       FieldDescriptor.TYPE_UINT32, FieldDescriptor.TYPE_FIXED32,
+                       FieldDescriptor.TYPE_SFIXED32):
+            return FieldType.INT
+        if fd.type in (FieldDescriptor.TYPE_INT64, FieldDescriptor.TYPE_SINT64,
+                        FieldDescriptor.TYPE_UINT64, FieldDescriptor.TYPE_FIXED64,
+                        FieldDescriptor.TYPE_SFIXED64):
+            return FieldType.LONG
+        if fd.type in (FieldDescriptor.TYPE_FLOAT, FieldDescriptor.TYPE_DOUBLE):
+            return FieldType.DOUBLE
+        if fd.type == FieldDescriptor.TYPE_BOOL:
+            return FieldType.BOOLEAN
+        return FieldType.NULL
+
+    @staticmethod
+    def get_inline_tags(fd: FieldDescriptor) -> set:
+        meta = fd.GetOptions().Extensions[meta_pb2.field_meta]
+        if meta is None:
+            return set()
+        else:
+            return set(meta.tags)
+
+    @staticmethod
+    def _disjoint(tags1: Set[str], tags2: Set[str]) -> bool:
+        for tag in tags1:
+            if tag in tags2:
+                return False
+        return True

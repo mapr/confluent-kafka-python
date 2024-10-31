@@ -343,8 +343,7 @@ class AvroSerializer(BaseSerializer):
         return parsed_schema
 
     def _field_transform(self, rule_ctx, message, transform):
-        # TODO
-        pass
+        return AvroUtils.transform(rule_ctx, self._parsed_schema, message, transform)
 
 
 class AvroDeserializer(BaseDeserializer):
@@ -474,10 +473,13 @@ class AvroDeserializer(BaseDeserializer):
 
             return obj_dict
 
+    def _field_transform(self, rule_ctx, message, transform):
+        return AvroUtils.transform(rule_ctx, self._parsed_schema, message, transform)
+
 
 class AvroUtils(object):
     @staticmethod
-    def _transform(ctx: RuleContext, schema: AvroSchema, message: Any, transform: FieldTransform) -> Any:
+    def transform(ctx: RuleContext, schema: AvroSchema, message: Any, transform: FieldTransform) -> Any:
         if message is None or schema is None:
             return message
         field_ctx = ctx.current_field()
@@ -601,16 +603,3 @@ class AvroUtils(object):
     def implied_namespace(name: str) -> Optional[str]:
         match = re.match("^(.*)\.[^.]+$", name)
         return match.group(1) if match else None
-
-
-
-
-
-
-
-
-
-
-
-
-

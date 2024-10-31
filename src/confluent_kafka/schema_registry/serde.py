@@ -24,6 +24,8 @@ __all__ = ['BaseSerializer',
            'FieldType',
            'RuleAction',
            'RuleContext',
+           'RuleConditionError',
+           'RuleError',
            'RuleExecutor']
 
 import logging
@@ -122,7 +124,7 @@ class RuleContext(object):
         return self._field_contexts[-1]
 
     def enter_field(self, containing_message: Any, full_name: str, name: str,
-        field_type: FieldType, tags: Optional[List[str]]) -> FieldContext:
+        field_type: FieldType, tags: Optional[Set[str]]) -> FieldContext:
         all_tags = set(tags if tags is not None else self._get_inline_tags(full_name))
         all_tags.update(self.get_tags(full_name))
         field_context = FieldContext(containing_message, full_name, name, field_type, all_tags)
@@ -173,7 +175,7 @@ class FieldRuleExecutor(RuleExecutor):
 
     def transform(self, ctx: RuleContext, message: Any) -> Any:
         # TODO preserve source
-        if ctx.rule_mode == RuleMode.WRITE or ctx.rule_mode == RuleMode.UPGRADE:
+        if ctx.rule_mode in (RuleMode.WRITE, RuleMode.UPGRADE):
             for i in range(ctx.index):
                 other_rule = ctx.rules[i]
                 if FieldRuleExecutor.are_transforms_with_same_tag(ctx.rule, other_rule):
@@ -346,11 +348,11 @@ class BaseSerde(object):
         action_name: Optional[str]) -> Optional[str]:
         if action_name is None or action_name == "":
             return None
-        if (rule.mode == RuleMode.WRITEREAD or rule.mode == RuleMode.UPDOWN) and ',' in action_name:
+        if rule.mode in (RuleMode.WRITEREAD, RuleMode.UPDOWN) and ',' in action_name:
             parts = action_name.split(',')
-            if rule_mode == RuleMode.WRITE or rule_mode == RuleMode.UPGRADE:
+            if rule_mode in (RuleMode.WRITE, RuleMode.UPGRADE):
                 return parts[0]
-            elif rule_mode == RuleMode.READ or rule_mode == RuleMode.DOWNGRADE:
+            elif rule_mode in (RuleMode.READ, RuleMode.DOWNGRADE):
                 return parts[1]
         return action_name
 
@@ -375,12 +377,12 @@ class BaseDeserializer(BaseSerde, Deserializer):
     def _has_rules(self, rule_set: RuleSet, mode: RuleMode) -> bool:
         if rule_set is None:
             return False
-        if mode == RuleMode.UPGRADE or mode == RuleMode.DOWNGRADE:
+        if mode in (RuleMode.UPGRADE, RuleMode.DOWNGRADE):
             return any(rule.mode == mode or rule.mode == RuleMode.UPDOWN
                        for rule in rule_set.migration_rules)
         elif mode == RuleMode.UPDOWN:
             return any(rule.mode == mode for rule in rule_set.migration_rules)
-        elif mode == RuleMode.WRITE or mode == RuleMode.READ:
+        elif mode in (RuleMode.WRITE, RuleMode.READ):
             return any(rule.mode == mode or rule.mode == RuleMode.WRITEREAD
                        for rule in rule_set.domain_rules)
         elif mode == RuleMode.WRITEREAD:
