@@ -342,8 +342,9 @@ class AvroSerializer(BaseSerializer):
         if latest_schema is not None:
             parsed_schema = self._get_parsed_schema(latest_schema)
             field_transformer = lambda rule_ctx, message, field_transform: (
-                self._field_transform(rule_ctx, parsed_schema, message, field_transform))
+                AvroUtils.transform(rule_ctx, parsed_schema, message, field_transform))
             value = self._execute_rules(ctx, subject, RuleMode.WRITE, None,
+                                        # TODO RAY - check if we need to get inline tags from named_schemas
                                         latest_schema, value, AvroUtils.get_inline_tags(parsed_schema),
                                         field_transformer)
 
@@ -361,10 +362,6 @@ class AvroSerializer(BaseSerializer):
         named_schemas = _resolve_named_schema(schema.schema, self._registry)
         parsed_schema = parse_schema(schema_dict, named_schemas=named_schemas)
         return parsed_schema
-
-    def _field_transform(self, rule_ctx: RuleContext, schema: AvroSchema, message: AvroMessage,
-        field_transform: FieldTransform) -> AvroMessage:
-        return AvroUtils.transform(rule_ctx, schema, message, field_transform)
 
 
 class AvroDeserializer(BaseDeserializer):
@@ -466,7 +463,7 @@ class AvroDeserializer(BaseDeserializer):
                                      "more but total data size is {} bytes. This "
                                      "message was not produced with a Confluent "
                                      "Schema Registry serializer".format(len(data)))
-
+        
         with _ContextStringIO(data) as payload:
             magic, schema_id = unpack('>bI', payload.read(5))
             if magic != _MAGIC_BYTE:
@@ -500,10 +497,6 @@ class AvroDeserializer(BaseDeserializer):
         named_schemas = _resolve_named_schema(schema.schema, self._registry)
         parsed_schema = parse_schema(schema_dict, named_schemas=named_schemas)
         return parsed_schema
-
-    def _field_transform(self, rule_ctx: RuleContext, schema: AvroSchema, message: AvroMessage,
-        field_transform: FieldTransform) -> AvroMessage:
-        return AvroUtils.transform(rule_ctx, schema, message, field_transform)
 
 
 class AvroUtils(object):

@@ -34,7 +34,7 @@ from . import (_MAGIC_BYTE,
                reference_subject_name_strategy,
                topic_subject_name_strategy,)
 from .schema_registry_client import (Schema,
-                                     SchemaReference, RuleKind)
+                                     SchemaReference, RuleKind, RuleMode)
 from confluent_kafka.serialization import SerializationError
 from .serde import BaseSerializer, BaseDeserializer, RuleContext, \
     FieldTransform, FieldType, RuleConditionError
@@ -452,6 +452,16 @@ class ProtobufSerializer(BaseSerializer):
 
             self._known_subjects.add(subject)
 
+        # TODO RAY fix latest_schema, _get_parsed_schema
+        if latest_schema is not None:
+            fd = self._get_parsed_schema(latest_schema)
+            desc = fd.message_types_by_name[message.DESCRIPTOR.full_name]
+            field_transformer = lambda rule_ctx, message, field_transform: (
+                ProtobufUtils.transform(rule_ctx, desc, message, field_transform))
+            message = self._execute_rules(ctx, subject, RuleMode.WRITE, None,
+                                          latest_schema, message, None,
+                                          field_transformer)
+
         with _ContextStringIO() as fo:
             # Write the magic byte and schema ID in network byte order
             # (big endian)
@@ -463,11 +473,6 @@ class ProtobufSerializer(BaseSerializer):
             # write the serialized data itself
             fo.write(message.SerializeToString())
             return fo.getvalue()
-
-    def _field_transform(self, rule_ctx: RuleContext, fd: FileDescriptor, message: Any,
-        field_transform: FieldTransform) -> Any:
-        # TODO RAY fix
-        return ProtobufUtils.transform(rule_ctx, fd, message, field_transform)
 
 
 class ProtobufDeserializer(BaseDeserializer):
@@ -671,8 +676,8 @@ class ProtobufDeserializer(BaseDeserializer):
 
     def _field_transform(self, rule_ctx: RuleContext, fd: FileDescriptor, message: Any,
         field_transform: FieldTransform) -> Any:
-        # TODO RAY fix
-        return ProtobufUtils.transform(rule_ctx, fd, message, field_transform)
+        desc = fd.message_types_by_name[message.DESCRIPTOR.full_name]
+        return ProtobufUtils.transform(rule_ctx, desc, message, field_transform)
 
 
 class ProtobufUtils(object):

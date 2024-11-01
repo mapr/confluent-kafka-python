@@ -26,7 +26,7 @@ from jsonschema import validate, ValidationError, RefResolver
 from confluent_kafka.schema_registry import (_MAGIC_BYTE,
                                              Schema,
                                              topic_subject_name_strategy,
-                                             RuleKind)
+                                             RuleKind, RuleMode)
 from confluent_kafka.schema_registry.serde import BaseSerializer, \
     BaseDeserializer, RuleContext, FieldTransform, FieldType, RuleConditionError
 from confluent_kafka.serialization import (SerializationError)
@@ -311,6 +311,15 @@ class JSONSerializer(BaseSerializer):
         except ValidationError as ve:
             raise SerializationError(ve.message)
 
+        # TODO RAY fix latest_schema, _get_parsed_schema
+        if latest_schema is not None:
+            parsed_schema = self._get_parsed_schema(latest_schema)
+            field_transformer = lambda rule_ctx, message, field_transform: (
+                JsonUtils.transform(rule_ctx, parsed_schema, message, field_transform))
+            value = self._execute_rules(ctx, subject, RuleMode.WRITE, None,
+                                        latest_schema, value, None,
+                                        field_transformer)
+
         with _ContextStringIO() as fo:
             # Write the magic byte and schema ID in network byte order (big endian)
             fo.write(struct.pack('>bI', _MAGIC_BYTE, self._schema_id))
@@ -438,8 +447,8 @@ class JSONDeserializer(BaseDeserializer):
 
 class JsonUtils(object):
     @staticmethod
-    def transform(ctx: RuleContext, schema: JsonSchema, path: str, message: JsonMessage,
-        field_transform: FieldTransform) -> Optional[JsonMessage]:
+    def transform(ctx: RuleContext, schema: JsonSchema, named_schemas: Dict[str, JsonSchema],
+        path: str, message: JsonMessage, field_transform: FieldTransform) -> Optional[JsonMessage]:
         if message is None or schema is None or isinstance(schema, bool):
             return message
         field_ctx = ctx.current_field()
@@ -449,31 +458,32 @@ class JsonUtils(object):
         if all_of is not None:
             subschema = JsonUtils._validate_subschemas(all_of, message)
             if subschema is not None:
-                return JsonUtils.transform(ctx, subschema, path, message, field_transform)
+                return JsonUtils.transform(ctx, subschema, named_schemas, path, message, field_transform)
         any_of = schema.get("anyOf")
         if any_of is not None:
             subschema = JsonUtils._validate_subschemas(any_of, message)
             if subschema is not None:
-                return JsonUtils.transform(ctx, subschema, path, message, field_transform)
+                return JsonUtils.transform(ctx, subschema, named_schemas, path, message, field_transform)
         one_of = schema.get("oneOf")
         if one_of is not None:
             subschema = JsonUtils._validate_subschemas(one_of, message)
             if subschema is not None:
-                return JsonUtils.transform(ctx, subschema, path, message, field_transform)
+                return JsonUtils.transform(ctx, subschema, named_schemas, path, message, field_transform)
         items = schema.get("items")
         if items is not None:
             if isinstance(message, list):
-                return [JsonUtils.transform(ctx, items, path, item, field_transform) for item in message]
+                return [JsonUtils.transform(ctx, items, named_schemas, path, item, field_transform) for item in message]
         ref = schema.get("$ref")
         if ref is not None:
-            # TODO RAY fix resolve ref
-            return JsonUtils.transform(ctx, ctx.resolve_ref(ref), path, message, field_transform)
+            ref_schema = named_schemas.get(ref)
+            return JsonUtils.transform(ctx, ref_schema, named_schemas, path, message, field_transform)
         type = JsonUtils.get_type(schema)
         if type == FieldType.RECORD:
             props = schema.get("properties")
             if props is not None:
                 for prop_name, prop_schema in props.items():
-                    JsonUtils._transform_field(ctx, path, prop_name, message, prop_schema, field_transform)
+                    JsonUtils._transform_field(ctx, path, prop_name, message,
+                                               prop_schema, named_schemas, field_transform)
             return message
         if type in (FieldType.ENUM, FieldType.STRING, FieldType.INT, FieldType.DOUBLE, FieldType.BOOLEAN):
             if field_ctx is not None:
@@ -485,7 +495,7 @@ class JsonUtils(object):
 
     @staticmethod
     def _transform_field(ctx: RuleContext, path: str, prop_name: str, message: JsonMessage,
-        prop_schema: JsonSchema, field_transform: FieldTransform):
+        prop_schema: JsonSchema, named_schemas: Dict[str, JsonSchema], field_transform: FieldTransform):
         full_name = path + "." + prop_name
         try:
             ctx.enter_field(
@@ -496,7 +506,7 @@ class JsonUtils(object):
                 JsonUtils.get_inline_tags(prop_schema)
             )
             value = message[prop_name]
-            new_value = JsonUtils.transform(ctx, prop_schema, full_name, value, field_transform)
+            new_value = JsonUtils.transform(ctx, prop_schema, named_schemas, full_name, value, field_transform)
             if ctx.rule.kind == RuleKind.CONDITION:
                 if new_value is False:
                     raise RuleConditionError(ctx.rule)
