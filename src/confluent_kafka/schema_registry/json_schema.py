@@ -307,6 +307,7 @@ class JSONSerializer(BaseSerializer):
                                               self._parsed_schema,
                                               store=named_schemas))
             else:
+                named_schemas = {}
                 validate(instance=value, schema=self._parsed_schema)
         except ValidationError as ve:
             raise SerializationError(ve.message)
@@ -315,7 +316,7 @@ class JSONSerializer(BaseSerializer):
         if latest_schema is not None:
             parsed_schema = self._get_parsed_schema(latest_schema)
             field_transformer = lambda rule_ctx, message, field_transform: (
-                JsonUtils.transform(rule_ctx, parsed_schema, message, field_transform))
+                JsonUtils.transform(rule_ctx, parsed_schema, named_schemas, "$", message, field_transform))
             value = self._execute_rules(ctx, subject, RuleMode.WRITE, None,
                                         latest_schema, value, None,
                                         field_transformer)
@@ -352,6 +353,10 @@ class JSONDeserializer(BaseDeserializer):
 
     __slots__ = ['_parsed_schema', '_from_dict', '_are_references_provided', '_schema']
 
+    _default_conf = {'use.latest.version': False,
+                     'use.latest.with.metadata': None,
+                     'subject.name.strategy': topic_subject_name_strategy}
+
     def __init__(self, schema_str, from_dict=None, schema_registry_client=None,
         conf=None, rule_registry=None):
         super().__init__()
@@ -377,6 +382,27 @@ class JSONDeserializer(BaseDeserializer):
         self._schema = schema
         self._registry = schema_registry_client
         self._rule_registry = rule_registry
+
+        conf_copy = self._default_conf.copy()
+        if conf is not None:
+            conf_copy.update(conf)
+
+        self._use_latest_version = conf_copy.pop('use.latest.version')
+        if not isinstance(self._use_latest_version, bool):
+            raise ValueError("use.latest.version must be a boolean value")
+
+        self._use_latest_with_metadata = conf_copy.pop('use.latest.with.metadata')
+        if (self._use_latest_with_metadata is not None and
+            not isinstance(self._use_latest_with_metadata, dict)):
+            raise ValueError("use.latest.with.metadata must be a dict value")
+
+        self._subject_name_func = conf_copy.pop('subject.name.strategy')
+        if not callable(self._subject_name_func):
+            raise ValueError("subject.name.strategy must be callable")
+
+        if len(conf_copy) > 0:
+            raise ValueError("Unrecognized properties: {}"
+                             .format(", ".join(conf_copy.keys())))
 
         if from_dict is not None and not callable(from_dict):
             raise ValueError("from_dict must be callable with the signature"

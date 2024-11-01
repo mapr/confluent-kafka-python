@@ -402,6 +402,10 @@ class AvroDeserializer(BaseDeserializer):
 
     __slots__ = ['_reader_schema', '_from_dict', '_writer_schemas', '_return_record_name', '_schema']
 
+    _default_conf = {'use.latest.version': False,
+                     'use.latest.with.metadata': None,
+                     'subject.name.strategy': topic_subject_name_strategy}
+
     def __init__(self, schema_registry_client, schema_str=None,
         from_dict=None, return_record_name=False, conf=None, rule_registry=None):
         super().__init__()
@@ -418,6 +422,27 @@ class AvroDeserializer(BaseDeserializer):
         self._registry = schema_registry_client
         self._rule_registry = rule_registry
         self._writer_schemas = {}
+
+        conf_copy = self._default_conf.copy()
+        if conf is not None:
+            conf_copy.update(conf)
+
+        self._use_latest_version = conf_copy.pop('use.latest.version')
+        if not isinstance(self._use_latest_version, bool):
+            raise ValueError("use.latest.version must be a boolean value")
+
+        self._use_latest_with_metadata = conf_copy.pop('use.latest.with.metadata')
+        if (self._use_latest_with_metadata is not None and
+            not isinstance(self._use_latest_with_metadata, dict)):
+            raise ValueError("use.latest.with.metadata must be a dict value")
+
+        self._subject_name_func = conf_copy.pop('subject.name.strategy')
+        if not callable(self._subject_name_func):
+            raise ValueError("subject.name.strategy must be callable")
+
+        if len(conf_copy) > 0:
+            raise ValueError("Unrecognized properties: {}"
+                             .format(", ".join(conf_copy.keys())))
 
         if schema:
             schema_dict = loads(self._schema.schema_str)
@@ -463,7 +488,12 @@ class AvroDeserializer(BaseDeserializer):
                                      "more but total data size is {} bytes. This "
                                      "message was not produced with a Confluent "
                                      "Schema Registry serializer".format(len(data)))
-        
+
+        subject = self._subject_name_func(ctx, '')
+        latest_schema = None
+        if subject is not None:
+            latest_schema = self._get_reader_schema(subject)
+
         with _ContextStringIO(data) as payload:
             magic, schema_id = unpack('>bI', payload.read(5))
             if magic != _MAGIC_BYTE:

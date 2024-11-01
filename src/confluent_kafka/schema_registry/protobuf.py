@@ -508,6 +508,9 @@ class ProtobufDeserializer(BaseDeserializer):
     __slots__ = ['_msg_class', '_index_array', '_use_deprecated_format']
 
     _default_conf = {
+        'use.latest.version': False,
+        'use.latest.with.metadata': None,
+        'subject.name.strategy': topic_subject_name_strategy,
         'use.deprecated.format': False,
     }
 
@@ -530,6 +533,19 @@ class ProtobufDeserializer(BaseDeserializer):
         conf_copy = self._default_conf.copy()
         if conf is not None:
             conf_copy.update(conf)
+
+        self._use_latest_version = conf_copy.pop('use.latest.version')
+        if not isinstance(self._use_latest_version, bool):
+            raise ValueError("use.latest.version must be a boolean value")
+
+        self._use_latest_with_metadata = conf_copy.pop('use.latest.with.metadata')
+        if (self._use_latest_with_metadata is not None and
+            not isinstance(self._use_latest_with_metadata, dict)):
+            raise ValueError("use.latest.with.metadata must be a dict value")
+
+        self._subject_name_func = conf_copy.pop('subject.name.strategy')
+        if not callable(self._subject_name_func):
+            raise ValueError("subject.name.strategy must be callable")
 
         self._use_deprecated_format = conf_copy.pop('use.deprecated.format')
         if not isinstance(self._use_deprecated_format, bool):
