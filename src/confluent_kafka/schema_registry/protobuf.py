@@ -21,11 +21,12 @@ import base64
 import struct
 import warnings
 from collections import deque
-from typing import Any, Set
+from typing import Set, Any
 
 import confluent_kafka.schema_registry.confluent.meta_pb2 as meta_pb2
 
-from google.protobuf.descriptor import Descriptor, FieldDescriptor
+from google.protobuf.descriptor import Descriptor, FieldDescriptor, \
+    FileDescriptor
 from google.protobuf.message import DecodeError, Message
 from google.protobuf.message_factory import MessageFactory
 
@@ -463,8 +464,10 @@ class ProtobufSerializer(BaseSerializer):
             fo.write(message.SerializeToString())
             return fo.getvalue()
 
-    def _field_transform(self, rule_ctx, message, transform):
-        return ProtobufUtils.transform(rule_ctx, self._parsed_schema, message, transform)
+    def _field_transform(self, rule_ctx: RuleContext, fd: FileDescriptor, message: Any,
+        field_transform: FieldTransform) -> Any:
+        # TODO RAY fix
+        return ProtobufUtils.transform(rule_ctx, fd, message, field_transform)
 
 
 class ProtobufDeserializer(BaseDeserializer):
@@ -666,32 +669,39 @@ class ProtobufDeserializer(BaseDeserializer):
 
             return msg
 
-    def _field_transform(self, rule_ctx, message, transform):
-        return ProtobufUtils.transform(rule_ctx, self._parsed_schema, message, transform)
+    def _field_transform(self, rule_ctx: RuleContext, fd: FileDescriptor, message: Any,
+        field_transform: FieldTransform) -> Any:
+        # TODO RAY fix
+        return ProtobufUtils.transform(rule_ctx, fd, message, field_transform)
 
 
 class ProtobufUtils(object):
     @staticmethod
-    def _transform(ctx: RuleContext, descriptor: Descriptor, message: Any, transform: FieldTransform) -> Any:
+    def transform(ctx: RuleContext, descriptor: Descriptor, message: Any,
+        field_transform: FieldTransform) -> Any:
         if message is None or descriptor is None:
             return message
         if isinstance(message, list):
-            return [ProtobufUtils._transform(ctx, descriptor, item, transform) for item in message]
+            return [ProtobufUtils.transform(ctx, descriptor, item, field_transform)
+                    for item in message]
         if isinstance(message, dict):
-            return {key: ProtobufUtils._transform(ctx, descriptor, value, transform) for key, value in message.items()}
+            return {key: ProtobufUtils.transform(ctx, descriptor, value, field_transform)
+                    for key, value in message.items()}
         if isinstance(message, Message):
             for fd in descriptor.fields:
-                ProtobufUtils._transform_field(ctx, fd, descriptor, message, transform)
+                ProtobufUtils._transform_field(ctx, fd, descriptor, message, field_transform)
             return message
         field_ctx = ctx.current_field()
         if field_ctx is not None:
             rule_tags = ctx.rule.tags
-            if rule_tags is None or len(rule_tags) == 0 or not ProtobufUtils._disjoint(set(rule_tags), field_ctx.tags):
-                transform(ctx, field_ctx, message)
+            if (rule_tags is None or len(rule_tags) == 0 or
+                not ProtobufUtils._disjoint(set(rule_tags), field_ctx.tags)):
+                field_transform(ctx, field_ctx, message)
         return message
 
     @staticmethod
-    def _transform_field(ctx: RuleContext, fd: FieldDescriptor, desc: Descriptor, message: Any, transform: FieldTransform):
+    def _transform_field(ctx: RuleContext, fd: FieldDescriptor, desc: Descriptor,
+        message: Any, field_transform: FieldTransform):
         try:
             ctx.enter_field(
                 message,
@@ -701,7 +711,7 @@ class ProtobufUtils(object):
                 ProtobufUtils.get_inline_tags(fd)
             )
             value = getattr(message, fd.name)
-            new_value = ProtobufUtils._transform(ctx, desc, value, transform)
+            new_value = ProtobufUtils.transform(ctx, desc, value, field_transform)
             if ctx.rule.kind == RuleKind.CONDITION:
                 if new_value is False:
                     raise RuleConditionError(ctx.rule)
@@ -750,3 +760,5 @@ class ProtobufUtils(object):
             if tag in tags2:
                 return False
         return True
+
+    # TODO RAY builtins

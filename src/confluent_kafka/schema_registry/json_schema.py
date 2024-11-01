@@ -14,11 +14,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import decimal
 from io import BytesIO
 
 import json
 import struct
+from typing import Any, Dict, Union, Optional, List
 
 from jsonschema import validate, ValidationError, RefResolver
 
@@ -26,7 +27,7 @@ from confluent_kafka.schema_registry import (_MAGIC_BYTE,
                                              Schema,
                                              topic_subject_name_strategy)
 from confluent_kafka.schema_registry.serde import BaseSerializer, \
-    BaseDeserializer
+    BaseDeserializer, RuleContext, FieldTransform, FieldType
 from confluent_kafka.serialization import (SerializationError)
 
 
@@ -60,6 +61,19 @@ def _resolve_named_schema(schema, schema_registry_client, named_schemas=None):
             referenced_schema_dict = json.loads(referenced_schema.schema.schema_str)
             named_schemas[ref.name] = referenced_schema_dict
     return named_schemas
+
+
+JsonMessage = Union[
+    None,  # 'null' Avro type
+    str,  # 'string' and 'enum'
+    float,  # 'float' and 'double'
+    int,  # 'int' and 'long'
+    decimal.Decimal,  # 'fixed'
+    bool,  # 'boolean'
+    List[Any],  # 'array'
+    Dict[Any, Any],  # 'map' and 'record'
+]
+JsonSchema = Union[bool, Dict[Any, Any]]
 
 
 class JSONSerializer(BaseSerializer):
@@ -225,7 +239,7 @@ class JSONSerializer(BaseSerializer):
             raise ValueError("Unrecognized properties: {}"
                              .format(", ".join(conf_copy.keys())))
 
-        schema_dict = json.loads(self._schema.schema_str) if schema else None
+        schema_dict = json.loads(self._schema.schema_str) if self._schema else None
         if schema_dict:
             schema_name = schema_dict.get('title', None)
         else:
@@ -419,3 +433,54 @@ class JSONDeserializer(BaseDeserializer):
                 return self._from_dict(obj_dict, ctx)
 
             return obj_dict
+
+
+class JsonUtils(object):
+    @staticmethod
+    def transform(ctx: RuleContext, schema: JsonSchema, path: str, message: JsonMessage,
+        field_transform: FieldTransform) -> Optional[JsonMessage]:
+        if message is None or schema is None or isinstance(schema, bool):
+            return message
+        field_ctx = ctx.current_field()
+        if field_ctx is not None:
+            field_ctx.type = JsonUtils._get_type(schema)
+        all_of = schema.get("allOf")
+        if all_of is not None:
+            subschema = JsonUtils._validate_subschemas(all_of, message)
+            if subschema is not None:
+                return JsonUtils.transform(ctx, subschema, path, message, field_transform)
+        any_of = schema.get("anyOf")
+        if any_of is not None:
+            subschema = JsonUtils._validate_subschemas(any_of, message)
+            if subschema is not None:
+                return JsonUtils.transform(ctx, subschema, path, message, field_transform)
+        one_of = schema.get("oneOf")
+        if one_of is not None:
+            subschema = JsonUtils._validate_subschemas(one_of, message)
+            if subschema is not None:
+                return JsonUtils.transform(ctx, subschema, path, message, field_transform)
+        items = schema.get("items")
+        if items is not None:
+            if isinstance(message, list):
+                return [JsonUtils.transform(ctx, items, path, item, field_transform) for item in message]
+        ref = schema.get("$ref")
+        if ref is not None:
+            # TODO RAY fix resolve ref
+            return JsonUtils._field_transform(ctx, ctx.resolve_ref(ref), path, message, field_transform)
+        type = JsonUtils._get_type(schema)
+        if type == FieldType.RECORD:
+            props = schema.get("properties")
+            if props is not None:
+                for prop_name, prop_schema in props.items():
+                    JsonUtils._transform_field(ctx, path, prop_name, message, prop_schema, field_transform)
+            return message
+        if type in (FieldType.ENUM, FieldType.STRING, FieldType.INT, FieldType.DOUBLE, FieldType.BOOLEAN):
+            if field_ctx is not None:
+                rule_tags = ctx.rule.tags
+                if (rule_tags is None or len(rule_tags) == 0 or
+                    not JsonUtils._disjoint(set(rule_tags), field_ctx.tags)):
+                    return field_transform(ctx, field_ctx, message)
+        return message
+
+
+

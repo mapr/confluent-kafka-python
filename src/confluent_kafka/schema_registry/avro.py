@@ -14,6 +14,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import decimal
 import re
 from io import BytesIO
 from json import loads
@@ -27,10 +28,11 @@ from fastavro import (parse_schema,
 
 from . import (_MAGIC_BYTE,
                Schema,
-               topic_subject_name_strategy, RegisteredSchema, RuleMode)
+               topic_subject_name_strategy, RegisteredSchema, RuleMode,
+               RuleKind)
 from confluent_kafka.serialization import (SerializationError)
 from .serde import BaseSerializer, BaseDeserializer, RuleContext, FieldType, \
-    FieldTransform
+    FieldTransform, RuleConditionError
 
 
 class _ContextStringIO(BytesIO):
@@ -87,6 +89,17 @@ def _resolve_named_schema(schema, schema_registry_client, named_schemas=None):
     return named_schemas
 
 
+AvroMessage = Union[
+    None,  # 'null' Avro type
+    str,  # 'string' and 'enum'
+    float,  # 'float' and 'double'
+    int,  # 'int' and 'long'
+    decimal.Decimal,  # 'fixed'
+    bool,  # 'boolean'
+    bytes,  # 'bytes'
+    List[Any],  # 'array'
+    Dict[Any, Any],  # 'map' and 'record'
+]
 AvroSchema = Union[str, List[Any], Dict[Any, Any]]
 
 
@@ -204,6 +217,8 @@ class AvroSerializer(BaseSerializer):
             schema = _schema_loads(schema_str)
         elif isinstance(schema_str, Schema):
             schema = schema_str
+        else:
+            schema = None
 
         self._registry = schema_registry_client
         self._rule_registry = rule_registry
@@ -326,8 +341,11 @@ class AvroSerializer(BaseSerializer):
 
         if latest_schema is not None:
             parsed_schema = self._get_parsed_schema(latest_schema)
+            field_transformer = lambda rule_ctx, message, field_transform: (
+                self._field_transform(rule_ctx, parsed_schema, message, field_transform))
             value = self._execute_rules(ctx, subject, RuleMode.WRITE, None,
-                                        latest_schema, value, AvroUtils.get_inline_tags(parsed_schema))
+                                        latest_schema, value, AvroUtils.get_inline_tags(parsed_schema),
+                                        field_transformer)
 
         with _ContextStringIO() as fo:
             # Write the magic byte and schema ID in network byte order (big endian)
@@ -344,8 +362,9 @@ class AvroSerializer(BaseSerializer):
         parsed_schema = parse_schema(schema_dict, named_schemas=named_schemas)
         return parsed_schema
 
-    def _field_transform(self, rule_ctx, message, transform):
-        return AvroUtils.transform(rule_ctx, self._parsed_schema, message, transform)
+    def _field_transform(self, rule_ctx: RuleContext, schema: AvroSchema, message: AvroMessage,
+        field_transform: FieldTransform) -> AvroMessage:
+        return AvroUtils.transform(rule_ctx, schema, message, field_transform)
 
 
 class AvroDeserializer(BaseDeserializer):
@@ -475,13 +494,22 @@ class AvroDeserializer(BaseDeserializer):
 
             return obj_dict
 
-    def _field_transform(self, rule_ctx, message, transform):
-        return AvroUtils.transform(rule_ctx, self._parsed_schema, message, transform)
+    def _get_parsed_schema(self, schema: RegisteredSchema) -> AvroSchema:
+        # TODO RAY cache
+        schema_dict = loads(schema.schema.schema_str)
+        named_schemas = _resolve_named_schema(schema.schema, self._registry)
+        parsed_schema = parse_schema(schema_dict, named_schemas=named_schemas)
+        return parsed_schema
+
+    def _field_transform(self, rule_ctx: RuleContext, schema: AvroSchema, message: AvroMessage,
+        field_transform: FieldTransform) -> AvroMessage:
+        return AvroUtils.transform(rule_ctx, schema, message, field_transform)
 
 
 class AvroUtils(object):
     @staticmethod
-    def transform(ctx: RuleContext, schema: AvroSchema, message: Any, transform: FieldTransform) -> Any:
+    def transform(ctx: RuleContext, schema: AvroSchema, message: AvroMessage,
+        field_transform: FieldTransform) -> AvroMessage:
         if message is None or schema is None:
             return message
         field_ctx = ctx.current_field()
@@ -491,24 +519,55 @@ class AvroUtils(object):
             subschema = AvroUtils._resolve_union(schema, message)
             if subschema is None:
                 return message
-            return AvroUtils._transform(ctx, subschema, message, transform)
+            return AvroUtils.transform(ctx, subschema, message, field_transform)
         elif isinstance(schema, dict):
             schema_type = schema["type"]
             if schema_type == 'array':
-                return [AvroUtils._transform(ctx, schema["items"], item, transform) for item in message]
+                return [AvroUtils.transform(ctx, schema["items"], item, field_transform)
+                        for item in message]
             elif schema_type == 'map':
-                return {key: AvroUtils._transform(ctx, schema["values"], value, transform) for key, value in message.items()}
+                return {key: AvroUtils.transform(ctx, schema["values"], value, field_transform)
+                        for key, value in message.items()}
             elif schema_type == 'record':
-                return {field: AvroUtils._transform(ctx, schema["fields"][field], message[field], transform) for field in message}
+                fields = schema["fields"]
+                for field in fields:
+                    AvroUtils._transform_field(ctx, schema, field, message, field_transform)
+                return message
 
         if field_ctx is not None:
             rule_tags = ctx.rule.tags
-            if rule_tags is None or len(rule_tags) == 0 or not AvroUtils._disjoint(set(rule_tags), field_ctx.tags):
-                return transform(ctx, field_ctx, message)
+            if (rule_tags is None or len(rule_tags) == 0 or
+                not AvroUtils._disjoint(set(rule_tags), field_ctx.tags)):
+                return field_transform(ctx, field_ctx, message)
         return message
 
     @staticmethod
-    def _get_type(schema: AvroSchema) -> str:
+    def _transform_field(ctx: RuleContext, schema: AvroSchema, field: Dict[str, Any],
+        message: AvroMessage, field_transform: FieldTransform):
+        type = field["type"]
+        name = field["name"]
+        full_name = schema["name"] + "." + name
+        try:
+            ctx.enter_field(
+                message,
+                full_name,
+                name,
+                # TODO RAY is this right?
+                AvroUtils._get_type(type),
+                None
+            )
+            value = message[name]
+            new_value = AvroUtils.transform(ctx, type, value, field_transform)
+            if ctx.rule.kind == RuleKind.CONDITION:
+                if new_value is False:
+                    raise RuleConditionError(ctx.rule)
+            else:
+                message[name] = new_value
+        finally:
+            ctx.exit_field()
+
+    @staticmethod
+    def _get_type(schema: AvroSchema) -> FieldType:
         if isinstance(schema, list):
             return FieldType.COMBINED
         elif isinstance(schema, dict):
@@ -556,7 +615,7 @@ class AvroUtils(object):
         return True
 
     @staticmethod
-    def _resolve_union(schema: AvroSchema, message: Any) -> Optional[AvroSchema]:
+    def _resolve_union(schema: AvroSchema, message: AvroMessage) -> Optional[AvroSchema]:
         for subschema in schema:
             if validate(message, subschema):
                 return subschema

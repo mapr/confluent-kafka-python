@@ -265,7 +265,8 @@ class BaseSerde(object):
     def _execute_rules(self, ser_ctx: SerializationContext, subject: str,
         rule_mode: RuleMode,
         source: Optional[RegisteredSchema], target: Optional[RegisteredSchema],
-        message: Any, inline_tags: Optional[Dict[str, Set[str]]]) -> Any:
+        message: Any, inline_tags: Optional[Dict[str, Set[str]]],
+        field_transformer: FieldTransformer) -> Any:
         if message is None or target is None:
             return None
         rules: Optional[List[Rule]] = None
@@ -302,7 +303,7 @@ class BaseSerde(object):
                 continue
 
             ctx = RuleContext(ser_ctx, source, target, subject, rule_mode, rule,
-                              index, rules, inline_tags, self._field_transform)
+                              index, rules, inline_tags, field_transformer)
             rule_executor = self._rule_registry.get_executor(rule.type.upper())
             if rule_executor is None:
                 self._run_action(ctx, rule_mode, rule, rule.on_failure, message,
@@ -362,9 +363,6 @@ class BaseSerde(object):
         elif action_name == 'NONE':
             return NoneAction()
         return self._rule_registry.get_action(action_name)
-
-    def _field_transform(self, rule_ctx, message, transform):
-        pass
 
 
 class BaseSerializer(BaseSerde, Serializer):
@@ -434,10 +432,12 @@ class BaseDeserializer(BaseSerde, Deserializer):
         return result
 
     def _execute_migrations(self, ser_ctx: SerializationContext, subject: str,
-        migrations: List[Migration], message: Any) -> Any:
+        migrations: List[Migration], message: Any,
+        field_transformer: FieldTransformer) -> Any:
         for migration in migrations:
             message = self._execute_rules(ser_ctx, subject, migration.rule_mode,
-                                          migration.source, migration.target, message, None)
+                                          migration.source, migration.target, message,
+                                          None, field_transformer)
         return message
 
 
