@@ -514,7 +514,7 @@ class AvroUtils(object):
             return message
         field_ctx = ctx.current_field()
         if field_ctx is not None:
-            field_ctx.type = AvroUtils._get_type(schema)
+            field_ctx.type = AvroUtils.get_type(schema)
         if isinstance(schema, list):
             subschema = AvroUtils._resolve_union(schema, message)
             if subschema is None:
@@ -553,7 +553,7 @@ class AvroUtils(object):
                 full_name,
                 name,
                 # TODO RAY is this right?
-                AvroUtils._get_type(type),
+                AvroUtils.get_type(type),
                 None
             )
             value = message[name]
@@ -567,7 +567,7 @@ class AvroUtils(object):
             ctx.exit_field()
 
     @staticmethod
-    def _get_type(schema: AvroSchema) -> FieldType:
+    def get_type(schema: AvroSchema) -> FieldType:
         if isinstance(schema, list):
             return FieldType.COMBINED
         elif isinstance(schema, dict):
@@ -644,7 +644,7 @@ class AvroUtils(object):
                 record_ns = schema.get("namespace")
                 record_name = schema.get("name")
                 if record_ns is None:
-                    record_ns = AvroUtils.implied_namespace(name)
+                    record_ns = AvroUtils._implied_namespace(name)
                 if record_ns is None:
                     record_ns = ns
                 if record_ns != '' and not record_name.startswith(record_ns):
@@ -659,8 +659,7 @@ class AvroUtils(object):
                     if field_type is not None:
                         AvroUtils._get_inline_tags_recursively(record_ns, record_name, field_type, tags)
 
-
     @staticmethod
-    def implied_namespace(name: str) -> Optional[str]:
+    def _implied_namespace(name: str) -> Optional[str]:
         match = re.match("^(.*)\.[^.]+$", name)
         return match.group(1) if match else None

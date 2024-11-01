@@ -19,15 +19,16 @@ from io import BytesIO
 
 import json
 import struct
-from typing import Any, Dict, Union, Optional, List
+from typing import Any, Dict, Union, Optional, List, Set
 
 from jsonschema import validate, ValidationError, RefResolver
 
 from confluent_kafka.schema_registry import (_MAGIC_BYTE,
                                              Schema,
-                                             topic_subject_name_strategy)
+                                             topic_subject_name_strategy,
+                                             RuleKind)
 from confluent_kafka.schema_registry.serde import BaseSerializer, \
-    BaseDeserializer, RuleContext, FieldTransform, FieldType
+    BaseDeserializer, RuleContext, FieldTransform, FieldType, RuleConditionError
 from confluent_kafka.serialization import (SerializationError)
 
 
@@ -443,7 +444,7 @@ class JsonUtils(object):
             return message
         field_ctx = ctx.current_field()
         if field_ctx is not None:
-            field_ctx.type = JsonUtils._get_type(schema)
+            field_ctx.type = JsonUtils.get_type(schema)
         all_of = schema.get("allOf")
         if all_of is not None:
             subschema = JsonUtils._validate_subschemas(all_of, message)
@@ -466,8 +467,8 @@ class JsonUtils(object):
         ref = schema.get("$ref")
         if ref is not None:
             # TODO RAY fix resolve ref
-            return JsonUtils._field_transform(ctx, ctx.resolve_ref(ref), path, message, field_transform)
-        type = JsonUtils._get_type(schema)
+            return JsonUtils.transform(ctx, ctx.resolve_ref(ref), path, message, field_transform)
+        type = JsonUtils.get_type(schema)
         if type == FieldType.RECORD:
             props = schema.get("properties")
             if props is not None:
@@ -481,6 +482,83 @@ class JsonUtils(object):
                     not JsonUtils._disjoint(set(rule_tags), field_ctx.tags)):
                     return field_transform(ctx, field_ctx, message)
         return message
+
+    @staticmethod
+    def _transform_field(ctx: RuleContext, path: str, prop_name: str, message: JsonMessage,
+        prop_schema: JsonSchema, field_transform: FieldTransform):
+        full_name = path + "." + prop_name
+        try:
+            ctx.enter_field(
+                message,
+                full_name,
+                prop_name,
+                JsonUtils.get_type(prop_schema),
+                JsonUtils.get_inline_tags(prop_schema)
+            )
+            value = message[prop_name]
+            new_value = JsonUtils.transform(ctx, prop_schema, full_name, value, field_transform)
+            if ctx.rule.kind == RuleKind.CONDITION:
+                if new_value is False:
+                    raise RuleConditionError(ctx.rule)
+            else:
+                message[prop_name] = new_value
+        finally:
+            ctx.exit_field()
+
+    @staticmethod
+    def _validate_subschemas(subschemas, message):
+        for subschema in subschemas:
+            try:
+                validate(instance=message, schema=subschema)
+                return subschema
+            except ValidationError:
+                pass
+        return None
+
+    @staticmethod
+    def get_type(schema) -> FieldType:
+        if isinstance(schema, bool):
+            return FieldType.NULL
+        type = schema["type"]
+        if isinstance(type, list):
+            return FieldType.COMBINED
+        if schema.get("const") is not None or schema.get("enum") is not None:
+            return FieldType.ENUM
+        if type == "object":
+            props = schema.get("properties")
+            if props is None or len(props) == 0:
+                return FieldType.MAP
+            return FieldType.RECORD
+        if type == "array":
+            return FieldType.ARRAY
+        if type == "string":
+            return FieldType.STRING
+        if type == "integer":
+            return FieldType.INT
+        if type == "number":
+            return FieldType.DOUBLE
+        if type == "boolean":
+            return FieldType.BOOLEAN
+        if type == "null":
+            return FieldType.NULL
+        return FieldType.NULL
+
+    @staticmethod
+    def _disjoint(tags1: Set[str], tags2: Set[str]) -> bool:
+        for tag in tags1:
+            if tag in tags2:
+                return False
+        return True
+
+    @staticmethod
+    def get_inline_tags(schema) -> Set[str]:
+        tags = schema.get("confluent:tags")
+        if tags is None:
+            return set()
+        else:
+            return set(tags)
+
+
 
 
 

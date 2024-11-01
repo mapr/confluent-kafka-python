@@ -747,7 +747,7 @@ class ProtobufUtils(object):
         return FieldType.NULL
 
     @staticmethod
-    def get_inline_tags(fd: FieldDescriptor) -> set:
+    def get_inline_tags(fd: FieldDescriptor) -> Set[str]:
         meta = fd.GetOptions().Extensions[meta_pb2.field_meta]
         if meta is None:
             return set()
