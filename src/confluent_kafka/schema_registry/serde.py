@@ -266,7 +266,7 @@ class BaseSerde(object):
         rule_mode: RuleMode,
         source: Optional[RegisteredSchema], target: Optional[RegisteredSchema],
         message: Any, inline_tags: Optional[Dict[str, Set[str]]],
-        field_transformer: FieldTransformer) -> Any:
+        field_transformer: Optional[FieldTransformer]) -> Any:
         if message is None or target is None:
             return None
         rules: Optional[List[Rule]] = None
@@ -432,12 +432,11 @@ class BaseDeserializer(BaseSerde, Deserializer):
         return result
 
     def _execute_migrations(self, ser_ctx: SerializationContext, subject: str,
-        migrations: List[Migration], message: Any,
-        field_transformer: FieldTransformer) -> Any:
+        migrations: List[Migration], message: Any) -> Any:
         for migration in migrations:
             message = self._execute_rules(ser_ctx, subject, migration.rule_mode,
                                           migration.source, migration.target, message,
-                                          None, field_transformer)
+                                          None, None)
         return message
 
 
