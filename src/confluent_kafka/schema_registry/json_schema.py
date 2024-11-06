@@ -26,7 +26,9 @@ from jsonschema import validate, ValidationError, RefResolver
 from confluent_kafka.schema_registry import (_MAGIC_BYTE,
                                              Schema,
                                              topic_subject_name_strategy,
-                                             RuleKind, RuleMode)
+                                             RegisteredSchema,
+                                             RuleKind,
+                                             RuleMode)
 from confluent_kafka.schema_registry.serde import BaseSerializer, \
     BaseDeserializer, RuleContext, FieldTransform, FieldType, RuleConditionError
 from confluent_kafka.serialization import (SerializationError)
@@ -272,10 +274,10 @@ class JSONSerializer(BaseSerializer):
             return None
 
         subject = self._subject_name_func(ctx, self._schema_name)
+        latest_schema = self._get_reader_schema(subject)
 
         if subject not in self._known_subjects:
-            if self._use_latest_version:
-                latest_schema = self._registry.get_latest_version(subject)
+            if latest_schema is not None:
                 self._schema_id = latest_schema.schema_id
 
             else:
@@ -316,7 +318,7 @@ class JSONSerializer(BaseSerializer):
         if latest_schema is not None:
             parsed_schema = self._get_parsed_schema(latest_schema)
             field_transformer = lambda rule_ctx, message, field_transform: (
-                JsonUtils.transform(rule_ctx, parsed_schema, named_schemas, "$", message, field_transform))
+                JSONUtils.transform(rule_ctx, parsed_schema, named_schemas, "$", message, field_transform))
             value = self._execute_rules(ctx, subject, RuleMode.WRITE, None,
                                         latest_schema, value, None,
                                         field_transformer)
@@ -329,6 +331,11 @@ class JSONSerializer(BaseSerializer):
             fo.write(json.dumps(value).encode('utf8'))
 
             return fo.getvalue()
+
+    def _get_parsed_schema(self, schema: RegisteredSchema) -> JsonSchema:
+        # TODO RAY cache
+        # TODO fix
+        return None
 
 
 class JSONDeserializer(BaseDeserializer):
@@ -351,7 +358,7 @@ class JSONDeserializer(BaseDeserializer):
         schema_registry_client (SchemaRegistryClient, optional): Schema Registry client instance. Needed if ``schema_str`` is a schema referencing other schemas or is not provided.
     """  # noqa: E501
 
-    __slots__ = ['_parsed_schema', '_from_dict', '_are_references_provided', '_schema']
+    __slots__ = ['_parsed_schema', '_from_dict', '_writer_schemas', '_are_references_provided', '_schema']
 
     _default_conf = {'use.latest.version': False,
                      'use.latest.with.metadata': None,
@@ -382,6 +389,7 @@ class JSONDeserializer(BaseDeserializer):
         self._schema = schema
         self._registry = schema_registry_client
         self._rule_registry = rule_registry
+        self._writer_schemas = {}
 
         conf_copy = self._default_conf.copy()
         if conf is not None:
@@ -437,6 +445,11 @@ class JSONDeserializer(BaseDeserializer):
                                      "message was not produced with a Confluent "
                                      "Schema Registry serializer".format(len(data)))
 
+        subject = self._subject_name_func(ctx, None)
+        latest_schema = None
+        if subject is not None:
+            latest_schema = self._get_reader_schema(subject)
+
         with _ContextStringIO(data) as payload:
             magic, schema_id = struct.unpack('>bI', payload.read(5))
             if magic != _MAGIC_BYTE:
@@ -446,6 +459,35 @@ class JSONDeserializer(BaseDeserializer):
 
             # JSON documents are self-describing; no need to query schema
             obj_dict = json.loads(payload.read())
+
+            writer_schema = self._writer_schemas.get(schema_id, None)
+            if subject is None:
+                subject = self._subject_name_func(ctx, writer_schema.get("name"))
+                if subject is not None:
+                    latest_schema = self._get_reader_schema(subject)
+
+            if latest_schema is not None:
+                migrations = self._get_migrations(subject, writer_schema, latest_schema, None)
+
+            if writer_schema is None:
+                pass
+                # TODO RAY stopped here
+                # registered_schema = self._registry.get_schema(schema_id)
+                # named_schemas = _resolve_named_schema(registered_schema, self._registry)
+                # prepared_schema = _schema_loads(registered_schema.schema_str)
+                # writer_schema = parse_schema(loads(
+                #     prepared_schema.schema_str), named_schemas=named_schemas)
+                # self._writer_schemas[schema_id] = writer_schema
+
+            if len(migrations) > 0:
+                obj_dict = self._execute_migrations(ctx, subject, migrations, obj_dict)
+
+            reader_schema = latest_schema if latest_schema is not None else writer_schema
+            field_transformer = lambda rule_ctx, message, field_transform: (
+                JSONUtils.transform(rule_ctx, reader_schema, message, field_transform))
+            obj_dict = self._execute_rules(ctx, subject, RuleMode.WRITE, None,
+                                           latest_schema, obj_dict, None,
+                                           field_transformer)
 
             try:
                 if self._are_references_provided:
@@ -471,7 +513,7 @@ class JSONDeserializer(BaseDeserializer):
             return obj_dict
 
 
-class JsonUtils(object):
+class JSONUtils(object):
     @staticmethod
     def transform(ctx: RuleContext, schema: JsonSchema, named_schemas: Dict[str, JsonSchema],
         path: str, message: JsonMessage, field_transform: FieldTransform) -> Optional[JsonMessage]:
@@ -479,43 +521,43 @@ class JsonUtils(object):
             return message
         field_ctx = ctx.current_field()
         if field_ctx is not None:
-            field_ctx.type = JsonUtils.get_type(schema)
+            field_ctx.type = JSONUtils.get_type(schema)
         all_of = schema.get("allOf")
         if all_of is not None:
-            subschema = JsonUtils._validate_subschemas(all_of, message)
+            subschema = JSONUtils._validate_subschemas(all_of, message)
             if subschema is not None:
-                return JsonUtils.transform(ctx, subschema, named_schemas, path, message, field_transform)
+                return JSONUtils.transform(ctx, subschema, named_schemas, path, message, field_transform)
         any_of = schema.get("anyOf")
         if any_of is not None:
-            subschema = JsonUtils._validate_subschemas(any_of, message)
+            subschema = JSONUtils._validate_subschemas(any_of, message)
             if subschema is not None:
-                return JsonUtils.transform(ctx, subschema, named_schemas, path, message, field_transform)
+                return JSONUtils.transform(ctx, subschema, named_schemas, path, message, field_transform)
         one_of = schema.get("oneOf")
         if one_of is not None:
-            subschema = JsonUtils._validate_subschemas(one_of, message)
+            subschema = JSONUtils._validate_subschemas(one_of, message)
             if subschema is not None:
-                return JsonUtils.transform(ctx, subschema, named_schemas, path, message, field_transform)
+                return JSONUtils.transform(ctx, subschema, named_schemas, path, message, field_transform)
         items = schema.get("items")
         if items is not None:
             if isinstance(message, list):
-                return [JsonUtils.transform(ctx, items, named_schemas, path, item, field_transform) for item in message]
+                return [JSONUtils.transform(ctx, items, named_schemas, path, item, field_transform) for item in message]
         ref = schema.get("$ref")
         if ref is not None:
             ref_schema = named_schemas.get(ref)
-            return JsonUtils.transform(ctx, ref_schema, named_schemas, path, message, field_transform)
-        type = JsonUtils.get_type(schema)
+            return JSONUtils.transform(ctx, ref_schema, named_schemas, path, message, field_transform)
+        type = JSONUtils.get_type(schema)
         if type == FieldType.RECORD:
             props = schema.get("properties")
             if props is not None:
                 for prop_name, prop_schema in props.items():
-                    JsonUtils._transform_field(ctx, path, prop_name, message,
+                    JSONUtils._transform_field(ctx, path, prop_name, message,
                                                prop_schema, named_schemas, field_transform)
             return message
         if type in (FieldType.ENUM, FieldType.STRING, FieldType.INT, FieldType.DOUBLE, FieldType.BOOLEAN):
             if field_ctx is not None:
                 rule_tags = ctx.rule.tags
                 if (rule_tags is None or len(rule_tags) == 0 or
-                    not JsonUtils._disjoint(set(rule_tags), field_ctx.tags)):
+                    not JSONUtils._disjoint(set(rule_tags), field_ctx.tags)):
                     return field_transform(ctx, field_ctx, message)
         return message
 
@@ -528,11 +570,11 @@ class JsonUtils(object):
                 message,
                 full_name,
                 prop_name,
-                JsonUtils.get_type(prop_schema),
-                JsonUtils.get_inline_tags(prop_schema)
+                JSONUtils.get_type(prop_schema),
+                JSONUtils.get_inline_tags(prop_schema)
             )
             value = message[prop_name]
-            new_value = JsonUtils.transform(ctx, prop_schema, named_schemas, full_name, value, field_transform)
+            new_value = JSONUtils.transform(ctx, prop_schema, named_schemas, full_name, value, field_transform)
             if ctx.rule.kind == RuleKind.CONDITION:
                 if new_value is False:
                     raise RuleConditionError(ctx.rule)

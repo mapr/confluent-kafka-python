@@ -202,7 +202,7 @@ class AvroSerializer(BaseSerializer):
         conf (dict): AvroSerializer configuration.
     """  # noqa: E501
     __slots__ = ['_hash', '_known_subjects', '_parsed_schema',
-                 '_schema', '_schema_name', '_to_dict']
+                 '_schema', '_schema_id', '_schema_name', '_to_dict']
 
     _default_conf = {'auto.register.schemas': True,
                      'normalize.schemas': False,
@@ -221,6 +221,7 @@ class AvroSerializer(BaseSerializer):
             schema = None
 
         self._registry = schema_registry_client
+        self._schema_id = None
         self._rule_registry = rule_registry
         self._known_subjects = set()
 
@@ -313,10 +314,9 @@ class AvroSerializer(BaseSerializer):
         subject = self._subject_name_func(ctx, self._schema_name)
         latest_schema = self._get_reader_schema(subject)
 
-        schema_id = None
         if subject not in self._known_subjects:
             if latest_schema is not None:
-                schema_id = latest_schema.schema_id
+                self._schema_id = latest_schema.schema_id
 
             else:
                 # Check to ensure this schema has been registered under subject_name.
@@ -324,14 +324,14 @@ class AvroSerializer(BaseSerializer):
                     # The schema name will always be the same. We can't however register
                     # a schema without a subject so we set the schema_id here to handle
                     # the initial registration.
-                    schema_id = self._registry.register_schema(subject,
+                    self._schema_id = self._registry.register_schema(subject,
                                                                self._schema,
                                                                self._normalize_schemas)
                 else:
                     registered_schema = self._registry.lookup_schema(subject,
                                                                      self._schema,
                                                                      self._normalize_schemas)
-                    schema_id = registered_schema.schema_id
+                    self._schema_id = registered_schema.schema_id
             self._known_subjects.add(subject)
 
         if self._to_dict is not None:
@@ -350,7 +350,7 @@ class AvroSerializer(BaseSerializer):
 
         with _ContextStringIO() as fo:
             # Write the magic byte and schema ID in network byte order (big endian)
-            fo.write(pack('>bI', _MAGIC_BYTE, schema_id))
+            fo.write(pack('>bI', _MAGIC_BYTE, self._schema_id))
             # write the record to the rest of the buffer
             schemaless_writer(fo, self._parsed_schema, value)
 
@@ -537,8 +537,6 @@ class AvroDeserializer(BaseDeserializer):
                                            # TODO RAY - check if we need to get inline tags from named_schemas
                                            latest_schema, obj_dict, AvroUtils.get_inline_tags(reader_schema),
                                            field_transformer)
-
-            # TODO RAY stopped here
 
             if self._from_dict is not None:
                 return self._from_dict(obj_dict, ctx)

@@ -32,7 +32,8 @@ from google.protobuf.message_factory import MessageFactory
 
 from . import (_MAGIC_BYTE,
                reference_subject_name_strategy,
-               topic_subject_name_strategy,)
+               topic_subject_name_strategy,
+               RegisteredSchema)
 from .schema_registry_client import (Schema,
                                      SchemaReference, RuleKind, RuleMode)
 from confluent_kafka.serialization import SerializationError
@@ -432,10 +433,10 @@ class ProtobufSerializer(BaseSerializer):
 
         subject = self._subject_name_func(ctx,
                                           message.DESCRIPTOR.full_name)
+        latest_schema = self._get_reader_schema(subject)
 
         if subject not in self._known_subjects:
-            if self._use_latest_version:
-                latest_schema = self._registry.get_latest_version(subject)
+            if latest_schema is not None:
                 self._schema_id = latest_schema.schema_id
 
             else:
@@ -474,6 +475,11 @@ class ProtobufSerializer(BaseSerializer):
             fo.write(message.SerializeToString())
             return fo.getvalue()
 
+    def _get_parsed_schema(self, schema: RegisteredSchema) -> FileDescriptor:
+        # TODO RAY cache
+        # TODO fix
+        return None
+
 
 class ProtobufDeserializer(BaseDeserializer):
     """
@@ -505,7 +511,7 @@ class ProtobufDeserializer(BaseDeserializer):
     `Protobuf API reference <https://googleapis.dev/python/protobuf/latest/google/protobuf.html>`_
     """
 
-    __slots__ = ['_msg_class', '_index_array', '_use_deprecated_format']
+    __slots__ = ['_msg_class', '_index_array', '_writer_schemas', '_use_deprecated_format']
 
     _default_conf = {
         'use.latest.version': False,
@@ -519,6 +525,7 @@ class ProtobufDeserializer(BaseDeserializer):
 
         self._registry = schema_registry_client
         self._rule_registry = rule_registry
+        self._writer_schemas = {}
 
         # Require use.deprecated.format to be explicitly configured
         # during a transitionary period since old/new format are
@@ -673,6 +680,11 @@ class ProtobufDeserializer(BaseDeserializer):
                                      "message was not produced with a Confluent "
                                      "Schema Registry serializer".format(len(data)))
 
+        subject = self._subject_name_func(ctx, None)
+        latest_schema = None
+        if subject is not None:
+            latest_schema = self._get_reader_schema(subject)
+
         with _ContextStringIO(data) as payload:
             magic, schema_id = struct.unpack('>bI', payload.read(5))
             if magic != _MAGIC_BYTE:
@@ -687,6 +699,35 @@ class ProtobufDeserializer(BaseDeserializer):
                 msg.ParseFromString(payload.read())
             except DecodeError as e:
                 raise SerializationError(str(e))
+
+            writer_schema = self._writer_schemas.get(schema_id, None)
+            if subject is None:
+                subject = self._subject_name_func(ctx, msg.DESCRIPTOR.full_name)
+                if subject is not None:
+                    latest_schema = self._get_reader_schema(subject)
+
+            if latest_schema is not None:
+                migrations = self._get_migrations(subject, writer_schema, latest_schema, None)
+
+            if writer_schema is None:
+                pass
+                # TODO RAY stopped here
+                # registered_schema = self._registry.get_schema(schema_id)
+                # named_schemas = _resolve_named_schema(registered_schema, self._registry)
+                # prepared_schema = _schema_loads(registered_schema.schema_str)
+                # writer_schema = parse_schema(loads(
+                #     prepared_schema.schema_str), named_schemas=named_schemas)
+                # self._writer_schemas[schema_id] = writer_schema
+
+            if len(migrations) > 0:
+                msg = self._execute_migrations(ctx, subject, migrations, msg)
+
+            reader_schema = latest_schema if latest_schema is not None else writer_schema
+            field_transformer = lambda rule_ctx, message, field_transform: (
+                ProtobufUtils.transform(rule_ctx, reader_schema, message, field_transform))
+            msg = self._execute_rules(ctx, subject, RuleMode.WRITE, None,
+                                           latest_schema, msg, None,
+                                           field_transformer)
 
             return msg
 
