@@ -264,9 +264,7 @@ class AvroSerializer(BaseSerializer):
                              .format(", ".join(conf_copy.keys())))
 
         if schema:
-            schema_dict = loads(schema.schema_str)
-            named_schemas = _resolve_named_schema(schema, self._registry)
-            parsed_schema = parse_schema(schema_dict, named_schemas=named_schemas)
+            parsed_schema = self._get_parsed_schema(schema)
 
             if isinstance(parsed_schema, list):
                 # if parsed_schema is a list, we have an Avro union and there
@@ -280,6 +278,7 @@ class AvroSerializer(BaseSerializer):
                 # i.e. {"type": "string"} has a name of string.
                 # This function does not comply.
                 # https://github.com/fastavro/fastavro/issues/415
+                schema_dict = loads(schema.schema_str)
                 schema_name = parsed_schema.get("name", schema_dict["type"])
         else:
             schema_name = None
@@ -526,7 +525,10 @@ class AvroDeserializer(BaseDeserializer):
                                              self._reader_schema,
                                              self._return_record_name)
 
-            reader_schema = latest_schema if latest_schema is not None else writer_schema
+            if latest_schema is not None:
+                reader_schema = self._get_parsed_schema(latest_schema.schema)
+            else:
+                reader_schema = writer_schema
             field_transformer = lambda rule_ctx, message, field_transform: (
                 AvroUtils.transform(rule_ctx, reader_schema, message, field_transform))
             obj_dict = self._execute_rules(ctx, subject, RuleMode.WRITE, None,

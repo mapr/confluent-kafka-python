@@ -34,8 +34,7 @@ from google.protobuf.message_factory import MessageFactory
 
 from . import (_MAGIC_BYTE,
                reference_subject_name_strategy,
-               topic_subject_name_strategy,
-               RegisteredSchema)
+               topic_subject_name_strategy)
 from .schema_registry_client import (Schema,
                                      SchemaReference,
                                      RuleKind,
@@ -125,7 +124,7 @@ def _create_index_array(msg_desc):
     return list(msg_idx)
 
 
-def _schema_to_str(file_descriptor):
+def _schema_to_str(file_descriptor: FileDescriptor) -> str:
     """
     Base64 encode a FileDescriptor
 
@@ -139,19 +138,19 @@ def _schema_to_str(file_descriptor):
     return base64.standard_b64encode(file_descriptor.serialized_pb).decode('ascii')
 
 
-def _str_to_schema(str):
+def _str_to_schema(schema_str: str) -> descriptor_pb2.FileDescriptorProto:
     """
     Base64 decode a FileDescriptor
 
     Args:
-        str: Base64 encoded FileDescriptorProto
+        schema_str (str): Base64 encoded FileDescriptorProto
 
     Returns:
-        file_descriptor (FileDescriptor): FileDescriptor.
+        FileDescriptorProto: FileDescriptor.
     """
 
-    serialized_pb = base64.standard_b64decode(str.encode('ascii'))
-    # TODO RAY is this right
+    serialized_pb = base64.standard_b64decode(schema_str.encode('ascii'))
+    # TODO RAY is this right?
     return descriptor_pb2.FileDescriptorProto.FromString(serialized_pb)
 
 
@@ -493,7 +492,7 @@ class ProtobufSerializer(BaseSerializer):
 
         if latest_schema is not None:
             # TODO RAY cache
-            fd = self._get_parsed_schema(latest_schema)
+            fd = self._get_parsed_schema(latest_schema.schema)
             desc = fd.message_types_by_name[message.DESCRIPTOR.full_name]
             field_transformer = lambda rule_ctx, message, field_transform: (
                 ProtobufUtils.transform(rule_ctx, desc, message, field_transform))
@@ -755,7 +754,10 @@ class ProtobufDeserializer(BaseDeserializer):
             if len(migrations) > 0:
                 msg = self._execute_migrations(ctx, subject, migrations, msg)
 
-            reader_schema = latest_schema if latest_schema is not None else writer_schema
+            if latest_schema is not None:
+                reader_schema = self._get_parsed_schema(latest_schema.schema)
+            else:
+                reader_schema = writer_schema
             field_transformer = lambda rule_ctx, message, field_transform: (
                 ProtobufUtils.transform(rule_ctx, reader_schema, message, field_transform))
             msg = self._execute_rules(ctx, subject, RuleMode.WRITE, None,
