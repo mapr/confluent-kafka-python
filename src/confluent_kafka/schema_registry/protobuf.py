@@ -23,6 +23,8 @@ import warnings
 from collections import deque
 from typing import Set, Any
 
+from google.protobuf import descriptor_pb2
+
 import confluent_kafka.schema_registry.confluent.meta_pb2 as meta_pb2
 
 from google.protobuf.descriptor import Descriptor, FieldDescriptor, \
@@ -35,7 +37,9 @@ from . import (_MAGIC_BYTE,
                topic_subject_name_strategy,
                RegisteredSchema)
 from .schema_registry_client import (Schema,
-                                     SchemaReference, RuleKind, RuleMode)
+                                     SchemaReference,
+                                     RuleKind,
+                                     RuleMode)
 from confluent_kafka.serialization import SerializationError
 from .serde import BaseSerializer, BaseDeserializer, RuleContext, \
     FieldTransform, FieldType, RuleConditionError
@@ -133,6 +137,40 @@ def _schema_to_str(file_descriptor):
     """
 
     return base64.standard_b64encode(file_descriptor.serialized_pb).decode('ascii')
+
+
+def _str_to_schema(str):
+    """
+    Base64 decode a FileDescriptor
+
+    Args:
+        str: Base64 encoded FileDescriptorProto
+
+    Returns:
+        file_descriptor (FileDescriptor): FileDescriptor.
+    """
+
+    serialized_pb = base64.standard_b64decode(str.encode('ascii'))
+    # TODO RAY is this right
+    return descriptor_pb2.FileDescriptorProto.FromString(serialized_pb)
+
+
+def _resolve_named_schema(schema, schema_registry_client, named_schemas=None):
+    """
+    Resolves named schemas referenced by the provided schema recursively.
+    :param schema: Schema to resolve named schemas for.
+    :param schema_registry_client: SchemaRegistryClient to use for retrieval.
+    :param named_schemas: Dict of named schemas resolved recursively.
+    :return: named_schemas dict.
+    """
+    if named_schemas is None:
+        named_schemas = {}
+    if schema.references is not None:
+        for ref in schema.references:
+            referenced_schema = schema_registry_client.get_version(ref.subject, ref.version)
+            _resolve_named_schema(referenced_schema.schema, schema_registry_client, named_schemas)
+            named_schemas[ref.name] = _str_to_schema(referenced_schema.schema.schema_str)
+    return named_schemas
 
 
 class ProtobufSerializer(BaseSerializer):
@@ -453,8 +491,8 @@ class ProtobufSerializer(BaseSerializer):
 
             self._known_subjects.add(subject)
 
-        # TODO RAY fix latest_schema, _get_parsed_schema
         if latest_schema is not None:
+            # TODO RAY cache
             fd = self._get_parsed_schema(latest_schema)
             desc = fd.message_types_by_name[message.DESCRIPTOR.full_name]
             field_transformer = lambda rule_ctx, message, field_transform: (
@@ -475,7 +513,7 @@ class ProtobufSerializer(BaseSerializer):
             fo.write(message.SerializeToString())
             return fo.getvalue()
 
-    def _get_parsed_schema(self, schema: RegisteredSchema) -> FileDescriptor:
+    def _get_parsed_schema(self, schema: Schema) -> FileDescriptor:
         # TODO RAY cache
         # TODO fix
         return None
@@ -710,14 +748,9 @@ class ProtobufDeserializer(BaseDeserializer):
                 migrations = self._get_migrations(subject, writer_schema, latest_schema, None)
 
             if writer_schema is None:
-                pass
-                # TODO RAY stopped here
-                # registered_schema = self._registry.get_schema(schema_id)
-                # named_schemas = _resolve_named_schema(registered_schema, self._registry)
-                # prepared_schema = _schema_loads(registered_schema.schema_str)
-                # writer_schema = parse_schema(loads(
-                #     prepared_schema.schema_str), named_schemas=named_schemas)
-                # self._writer_schemas[schema_id] = writer_schema
+                registered_schema = self._registry.get_schema(schema_id)
+                writer_schema = self._get_parsed_schema(registered_schema.schema)
+                self._writer_schemas[schema_id] = writer_schema
 
             if len(migrations) > 0:
                 msg = self._execute_migrations(ctx, subject, migrations, msg)
@@ -730,6 +763,11 @@ class ProtobufDeserializer(BaseDeserializer):
                                            field_transformer)
 
             return msg
+
+    def _get_parsed_schema(self, schema: Schema) -> FileDescriptor:
+        # TODO RAY cache
+        # TODO fix
+        return None
 
     def _field_transform(self, rule_ctx: RuleContext, fd: FileDescriptor, message: Any,
         field_transform: FieldTransform) -> Any:

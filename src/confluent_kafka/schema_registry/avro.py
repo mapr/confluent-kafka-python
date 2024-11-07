@@ -28,7 +28,8 @@ from fastavro import (parse_schema,
 
 from . import (_MAGIC_BYTE,
                Schema,
-               topic_subject_name_strategy, RegisteredSchema, RuleMode,
+               topic_subject_name_strategy,
+               RuleMode,
                RuleKind)
 from confluent_kafka.serialization import (SerializationError)
 from .serde import BaseSerializer, BaseDeserializer, RuleContext, FieldType, \
@@ -340,7 +341,8 @@ class AvroSerializer(BaseSerializer):
             value = obj
 
         if latest_schema is not None:
-            parsed_schema = self._get_parsed_schema(latest_schema)
+            # TODO RAY cache
+            parsed_schema = self._get_parsed_schema(latest_schema.schema)
             field_transformer = lambda rule_ctx, message, field_transform: (
                 AvroUtils.transform(rule_ctx, parsed_schema, message, field_transform))
             value = self._execute_rules(ctx, subject, RuleMode.WRITE, None,
@@ -356,11 +358,11 @@ class AvroSerializer(BaseSerializer):
 
             return fo.getvalue()
 
-    def _get_parsed_schema(self, schema: RegisteredSchema) -> AvroSchema:
-        # TODO RAY cache
-        schema_dict = loads(schema.schema.schema_str)
-        named_schemas = _resolve_named_schema(schema.schema, self._registry)
-        parsed_schema = parse_schema(schema_dict, named_schemas=named_schemas)
+    def _get_parsed_schema(self, schema: Schema) -> AvroSchema:
+        named_schemas = _resolve_named_schema(schema, self._registry)
+        prepared_schema = _schema_loads(schema.schema_str)
+        parsed_schema = parse_schema(
+            loads(prepared_schema.schema_str), named_schemas=named_schemas)
         return parsed_schema
 
 
@@ -445,10 +447,7 @@ class AvroDeserializer(BaseDeserializer):
                              .format(", ".join(conf_copy.keys())))
 
         if schema:
-            schema_dict = loads(self._schema.schema_str)
-            named_schemas = _resolve_named_schema(self._schema, schema_registry_client)
-            self._reader_schema = parse_schema(schema_dict,
-                                               named_schemas=named_schemas)
+            self._reader_schema = self._get_parsed_schema(self._schema)
         else:
             self._reader_schema = None
 
@@ -512,10 +511,7 @@ class AvroDeserializer(BaseDeserializer):
 
             if writer_schema is None:
                 registered_schema = self._registry.get_schema(schema_id)
-                named_schemas = _resolve_named_schema(registered_schema, self._registry)
-                prepared_schema = _schema_loads(registered_schema.schema_str)
-                writer_schema = parse_schema(loads(
-                    prepared_schema.schema_str), named_schemas=named_schemas)
+                writer_schema = self._get_parsed_schema(registered_schema.schema)
                 self._writer_schemas[schema_id] = writer_schema
 
             if len(migrations) > 0:
@@ -543,11 +539,11 @@ class AvroDeserializer(BaseDeserializer):
 
             return obj_dict
 
-    def _get_parsed_schema(self, schema: RegisteredSchema) -> AvroSchema:
-        # TODO RAY cache
-        schema_dict = loads(schema.schema.schema_str)
-        named_schemas = _resolve_named_schema(schema.schema, self._registry)
-        parsed_schema = parse_schema(schema_dict, named_schemas=named_schemas)
+    def _get_parsed_schema(self, schema: Schema) -> AvroSchema:
+        named_schemas = _resolve_named_schema(schema, self._registry)
+        prepared_schema = _schema_loads(schema.schema_str)
+        parsed_schema = parse_schema(
+            loads(prepared_schema.schema_str), named_schemas=named_schemas)
         return parsed_schema
 
 

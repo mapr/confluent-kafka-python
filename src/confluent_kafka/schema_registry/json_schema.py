@@ -26,7 +26,6 @@ from jsonschema import validate, ValidationError, RefResolver
 from confluent_kafka.schema_registry import (_MAGIC_BYTE,
                                              Schema,
                                              topic_subject_name_strategy,
-                                             RegisteredSchema,
                                              RuleKind,
                                              RuleMode)
 from confluent_kafka.schema_registry.serde import BaseSerializer, \
@@ -314,8 +313,8 @@ class JSONSerializer(BaseSerializer):
         except ValidationError as ve:
             raise SerializationError(ve.message)
 
-        # TODO RAY fix latest_schema, _get_parsed_schema
         if latest_schema is not None:
+            # TODO RAY cache
             parsed_schema = self._get_parsed_schema(latest_schema)
             field_transformer = lambda rule_ctx, message, field_transform: (
                 JSONUtils.transform(rule_ctx, parsed_schema, named_schemas, "$", message, field_transform))
@@ -332,7 +331,7 @@ class JSONSerializer(BaseSerializer):
 
             return fo.getvalue()
 
-    def _get_parsed_schema(self, schema: RegisteredSchema) -> JsonSchema:
+    def _get_parsed_schema(self, schema: Schema) -> JsonSchema:
         # TODO RAY cache
         # TODO fix
         return None
@@ -470,14 +469,9 @@ class JSONDeserializer(BaseDeserializer):
                 migrations = self._get_migrations(subject, writer_schema, latest_schema, None)
 
             if writer_schema is None:
-                pass
-                # TODO RAY stopped here
-                # registered_schema = self._registry.get_schema(schema_id)
-                # named_schemas = _resolve_named_schema(registered_schema, self._registry)
-                # prepared_schema = _schema_loads(registered_schema.schema_str)
-                # writer_schema = parse_schema(loads(
-                #     prepared_schema.schema_str), named_schemas=named_schemas)
-                # self._writer_schemas[schema_id] = writer_schema
+                registered_schema = self._registry.get_schema(schema_id)
+                writer_schema = self._get_parsed_schema(registered_schema.schema)
+                self._writer_schemas[schema_id] = writer_schema
 
             if len(migrations) > 0:
                 obj_dict = self._execute_migrations(ctx, subject, migrations, obj_dict)
@@ -511,6 +505,11 @@ class JSONDeserializer(BaseDeserializer):
                 return self._from_dict(obj_dict, ctx)
 
             return obj_dict
+
+    def _get_parsed_schema(self, schema: Schema) -> JsonSchema:
+        # TODO RAY cache
+        # TODO fix
+        return None
 
 
 class JSONUtils(object):
