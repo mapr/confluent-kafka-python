@@ -503,7 +503,7 @@ class ProtobufSerializer(BaseSerializer):
             fd = self._get_parsed_schema(latest_schema.schema)
             desc = fd.message_types_by_name[message.DESCRIPTOR.full_name]
             field_transformer = lambda rule_ctx, message, field_transform: (
-                ProtobufUtils.transform(rule_ctx, desc, message, field_transform))
+                transform(rule_ctx, desc, message, field_transform))
             message = self._execute_rules(ctx, subject, RuleMode.WRITE, None,
                                           latest_schema, message, None,
                                           field_transformer)
@@ -781,7 +781,7 @@ class ProtobufDeserializer(BaseDeserializer):
                     raise SerializationError(str(e))
 
             field_transformer = lambda rule_ctx, message, field_transform: (
-                ProtobufUtils.transform(rule_ctx, reader_desc, message, field_transform))
+                transform(rule_ctx, reader_desc, message, field_transform))
             msg = self._execute_rules(ctx, subject, RuleMode.READ, None,
                                            reader_schema, msg, None,
                                            field_transformer)
@@ -806,90 +806,88 @@ class ProtobufDeserializer(BaseDeserializer):
             return self._get_message_desc(desc.nested_types[index], msg_index[1:])
 
 
-class ProtobufUtils(object):
-    @staticmethod
-    def transform(ctx: RuleContext, descriptor: Descriptor, message: Any,
-        field_transform: FieldTransform) -> Any:
-        if message is None or descriptor is None:
-            return message
-        if isinstance(message, list):
-            return [ProtobufUtils.transform(ctx, descriptor, item, field_transform)
-                    for item in message]
-        if isinstance(message, dict):
-            return {key: ProtobufUtils.transform(ctx, descriptor, value, field_transform)
-                    for key, value in message.items()}
-        if isinstance(message, Message):
-            for fd in descriptor.fields:
-                ProtobufUtils._transform_field(ctx, fd, descriptor, message, field_transform)
-            return message
-        field_ctx = ctx.current_field()
-        if field_ctx is not None:
-            rule_tags = ctx.rule.tags
-            if (rule_tags is None or len(rule_tags) == 0 or
-                not ProtobufUtils._disjoint(set(rule_tags), field_ctx.tags)):
-                field_transform(ctx, field_ctx, message)
+def transform(ctx: RuleContext, descriptor: Descriptor, message: Any,
+    field_transform: FieldTransform) -> Any:
+    if message is None or descriptor is None:
         return message
+    if isinstance(message, list):
+        return [transform(ctx, descriptor, item, field_transform)
+                for item in message]
+    if isinstance(message, dict):
+        return {key: transform(ctx, descriptor, value, field_transform)
+                for key, value in message.items()}
+    if isinstance(message, Message):
+        for fd in descriptor.fields:
+            _transform_field(ctx, fd, descriptor, message, field_transform)
+        return message
+    field_ctx = ctx.current_field()
+    if field_ctx is not None:
+        rule_tags = ctx.rule.tags
+        if (rule_tags is None or len(rule_tags) == 0 or
+            not _disjoint(set(rule_tags), field_ctx.tags)):
+            field_transform(ctx, field_ctx, message)
+    return message
 
-    @staticmethod
-    def _transform_field(ctx: RuleContext, fd: FieldDescriptor, desc: Descriptor,
-        message: Any, field_transform: FieldTransform):
-        try:
-            ctx.enter_field(
-                message,
-                fd.full_name,
-                fd.name,
-                ProtobufUtils.get_type(fd, desc),
-                ProtobufUtils.get_inline_tags(fd)
-            )
-            value = getattr(message, fd.name)
-            new_value = ProtobufUtils.transform(ctx, desc, value, field_transform)
-            if ctx.rule.kind == RuleKind.CONDITION:
-                if new_value is False:
-                    raise RuleConditionError(ctx.rule)
-            else:
-                setattr(message, fd.name, new_value)
-        finally:
-            ctx.exit_field()
 
-    @staticmethod
-    def get_type(fd: FieldDescriptor, desc: Descriptor) -> FieldType:
-        if desc._is_map_entry:
-            return FieldType.MAP
-        if fd.type == FieldDescriptor.TYPE_MESSAGE:
-            return FieldType.RECORD
-        if fd.type == FieldDescriptor.TYPE_ENUM:
-            return FieldType.ENUM
-        if fd.type == FieldDescriptor.TYPE_STRING:
-            return FieldType.STRING
-        if fd.type == FieldDescriptor.TYPE_BYTES:
-            return FieldType.BYTES
-        if fd.type in (FieldDescriptor.TYPE_INT32, FieldDescriptor.TYPE_SINT32,
-                       FieldDescriptor.TYPE_UINT32, FieldDescriptor.TYPE_FIXED32,
-                       FieldDescriptor.TYPE_SFIXED32):
-            return FieldType.INT
-        if fd.type in (FieldDescriptor.TYPE_INT64, FieldDescriptor.TYPE_SINT64,
-                        FieldDescriptor.TYPE_UINT64, FieldDescriptor.TYPE_FIXED64,
-                        FieldDescriptor.TYPE_SFIXED64):
-            return FieldType.LONG
-        if fd.type in (FieldDescriptor.TYPE_FLOAT, FieldDescriptor.TYPE_DOUBLE):
-            return FieldType.DOUBLE
-        if fd.type == FieldDescriptor.TYPE_BOOL:
-            return FieldType.BOOLEAN
-        return FieldType.NULL
-
-    @staticmethod
-    def get_inline_tags(fd: FieldDescriptor) -> Set[str]:
-        meta = fd.GetOptions().Extensions[meta_pb2.field_meta]
-        if meta is None:
-            return set()
+def _transform_field(ctx: RuleContext, fd: FieldDescriptor, desc: Descriptor,
+    message: Any, field_transform: FieldTransform):
+    try:
+        ctx.enter_field(
+            message,
+            fd.full_name,
+            fd.name,
+            get_type(fd, desc),
+            get_inline_tags(fd)
+        )
+        value = getattr(message, fd.name)
+        new_value = transform(ctx, desc, value, field_transform)
+        if ctx.rule.kind == RuleKind.CONDITION:
+            if new_value is False:
+                raise RuleConditionError(ctx.rule)
         else:
-            return set(meta.tags)
+            setattr(message, fd.name, new_value)
+    finally:
+        ctx.exit_field()
 
-    @staticmethod
-    def _disjoint(tags1: Set[str], tags2: Set[str]) -> bool:
-        for tag in tags1:
-            if tag in tags2:
-                return False
-        return True
 
-    # TODO RAY builtins
+def get_type(fd: FieldDescriptor, desc: Descriptor) -> FieldType:
+    if desc._is_map_entry:
+        return FieldType.MAP
+    if fd.type == FieldDescriptor.TYPE_MESSAGE:
+        return FieldType.RECORD
+    if fd.type == FieldDescriptor.TYPE_ENUM:
+        return FieldType.ENUM
+    if fd.type == FieldDescriptor.TYPE_STRING:
+        return FieldType.STRING
+    if fd.type == FieldDescriptor.TYPE_BYTES:
+        return FieldType.BYTES
+    if fd.type in (FieldDescriptor.TYPE_INT32, FieldDescriptor.TYPE_SINT32,
+                   FieldDescriptor.TYPE_UINT32, FieldDescriptor.TYPE_FIXED32,
+                   FieldDescriptor.TYPE_SFIXED32):
+        return FieldType.INT
+    if fd.type in (FieldDescriptor.TYPE_INT64, FieldDescriptor.TYPE_SINT64,
+                    FieldDescriptor.TYPE_UINT64, FieldDescriptor.TYPE_FIXED64,
+                    FieldDescriptor.TYPE_SFIXED64):
+        return FieldType.LONG
+    if fd.type in (FieldDescriptor.TYPE_FLOAT, FieldDescriptor.TYPE_DOUBLE):
+        return FieldType.DOUBLE
+    if fd.type == FieldDescriptor.TYPE_BOOL:
+        return FieldType.BOOLEAN
+    return FieldType.NULL
+
+
+def get_inline_tags(fd: FieldDescriptor) -> Set[str]:
+    meta = fd.GetOptions().Extensions[meta_pb2.field_meta]
+    if meta is None:
+        return set()
+    else:
+        return set(meta.tags)
+
+
+def _disjoint(tags1: Set[str], tags2: Set[str]) -> bool:
+    for tag in tags1:
+        if tag in tags2:
+            return False
+    return True
+
+# TODO RAY builtins

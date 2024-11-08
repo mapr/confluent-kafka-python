@@ -119,7 +119,7 @@ class RuleContext(object):
         return self.inline_tags.get(name, set())
 
     def current_field(self) -> Optional[FieldContext]:
-        if len(self._field_contexts) == 0:
+        if not self._field_contexts:
             return None
         return self._field_contexts[-1]
 
@@ -143,7 +143,7 @@ class RuleContext(object):
         return result
 
     def exit_field(self):
-        if len(self._field_contexts) > 0:
+        if self._field_contexts:
             self._field_contexts.pop()
 
 

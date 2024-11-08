@@ -314,7 +314,7 @@ class JSONSerializer(BaseSerializer):
             # TODO RAY cache
             parsed_schema, named_schemas = self._get_parsed_schema(latest_schema.schema)
             field_transformer = lambda rule_ctx, message, field_transform: (
-                JSONUtils.transform(rule_ctx, parsed_schema, named_schemas, "$", message, field_transform))
+                transform(rule_ctx, parsed_schema, named_schemas, "$", message, field_transform))
             value = self._execute_rules(ctx, subject, RuleMode.WRITE, None,
                                         latest_schema, value, None,
                                         field_transformer)
@@ -477,7 +477,7 @@ class JSONDeserializer(BaseDeserializer):
                 obj_dict = self._execute_migrations(ctx, subject, migrations, obj_dict)
 
             field_transformer = lambda rule_ctx, message, field_transform: (
-                JSONUtils.transform(rule_ctx, reader_schema, reader_named_schemas, "$", message, field_transform))
+                transform(rule_ctx, reader_schema, reader_named_schemas, "$", message, field_transform))
             obj_dict = self._execute_rules(ctx, subject, RuleMode.READ, None,
                                            reader_schema, obj_dict, None,
                                            field_transformer)
@@ -509,130 +509,123 @@ class JSONDeserializer(BaseDeserializer):
         return parsed_schema, named_schemas
 
 
-class JSONUtils(object):
-    @staticmethod
-    def transform(ctx: RuleContext, schema: JsonSchema, named_schemas: Dict[str, JsonSchema],
-        path: str, message: JsonMessage, field_transform: FieldTransform) -> Optional[JsonMessage]:
-        if message is None or schema is None or isinstance(schema, bool):
-            return message
-        field_ctx = ctx.current_field()
-        if field_ctx is not None:
-            field_ctx.type = JSONUtils.get_type(schema)
-        all_of = schema.get("allOf")
-        if all_of is not None:
-            subschema = JSONUtils._validate_subschemas(all_of, message)
-            if subschema is not None:
-                return JSONUtils.transform(ctx, subschema, named_schemas, path, message, field_transform)
-        any_of = schema.get("anyOf")
-        if any_of is not None:
-            subschema = JSONUtils._validate_subschemas(any_of, message)
-            if subschema is not None:
-                return JSONUtils.transform(ctx, subschema, named_schemas, path, message, field_transform)
-        one_of = schema.get("oneOf")
-        if one_of is not None:
-            subschema = JSONUtils._validate_subschemas(one_of, message)
-            if subschema is not None:
-                return JSONUtils.transform(ctx, subschema, named_schemas, path, message, field_transform)
-        items = schema.get("items")
-        if items is not None:
-            if isinstance(message, list):
-                return [JSONUtils.transform(ctx, items, named_schemas, path, item, field_transform) for item in message]
-        ref = schema.get("$ref")
-        if ref is not None:
-            ref_schema = named_schemas.get(ref)
-            return JSONUtils.transform(ctx, ref_schema, named_schemas, path, message, field_transform)
-        type = JSONUtils.get_type(schema)
-        if type == FieldType.RECORD:
-            props = schema.get("properties")
-            if props is not None:
-                for prop_name, prop_schema in props.items():
-                    JSONUtils._transform_field(ctx, path, prop_name, message,
-                                               prop_schema, named_schemas, field_transform)
-            return message
-        if type in (FieldType.ENUM, FieldType.STRING, FieldType.INT, FieldType.DOUBLE, FieldType.BOOLEAN):
-            if field_ctx is not None:
-                rule_tags = ctx.rule.tags
-                if (rule_tags is None or len(rule_tags) == 0 or
-                    not JSONUtils._disjoint(set(rule_tags), field_ctx.tags)):
-                    return field_transform(ctx, field_ctx, message)
+def transform(ctx: RuleContext, schema: JsonSchema, named_schemas: Dict[str, JsonSchema],
+    path: str, message: JsonMessage, field_transform: FieldTransform) -> Optional[JsonMessage]:
+    if message is None or schema is None or isinstance(schema, bool):
         return message
+    field_ctx = ctx.current_field()
+    if field_ctx is not None:
+        field_ctx.type = get_type(schema)
+    all_of = schema.get("allOf")
+    if all_of is not None:
+        subschema = _validate_subschemas(all_of, message)
+        if subschema is not None:
+            return transform(ctx, subschema, named_schemas, path, message, field_transform)
+    any_of = schema.get("anyOf")
+    if any_of is not None:
+        subschema = _validate_subschemas(any_of, message)
+        if subschema is not None:
+            return transform(ctx, subschema, named_schemas, path, message, field_transform)
+    one_of = schema.get("oneOf")
+    if one_of is not None:
+        subschema = _validate_subschemas(one_of, message)
+        if subschema is not None:
+            return transform(ctx, subschema, named_schemas, path, message, field_transform)
+    items = schema.get("items")
+    if items is not None:
+        if isinstance(message, list):
+            return [transform(ctx, items, named_schemas, path, item, field_transform) for item in message]
+    ref = schema.get("$ref")
+    if ref is not None:
+        ref_schema = named_schemas.get(ref)
+        return transform(ctx, ref_schema, named_schemas, path, message, field_transform)
+    type = get_type(schema)
+    if type == FieldType.RECORD:
+        props = schema.get("properties")
+        if props is not None:
+            for prop_name, prop_schema in props.items():
+                _transform_field(ctx, path, prop_name, message,
+                                 prop_schema, named_schemas, field_transform)
+        return message
+    if type in (FieldType.ENUM, FieldType.STRING, FieldType.INT, FieldType.DOUBLE, FieldType.BOOLEAN):
+        if field_ctx is not None:
+            rule_tags = ctx.rule.tags
+            if (rule_tags is None or len(rule_tags) == 0 or
+                not _disjoint(set(rule_tags), field_ctx.tags)):
+                return field_transform(ctx, field_ctx, message)
+    return message
 
-    @staticmethod
-    def _transform_field(ctx: RuleContext, path: str, prop_name: str, message: JsonMessage,
-        prop_schema: JsonSchema, named_schemas: Dict[str, JsonSchema], field_transform: FieldTransform):
-        full_name = path + "." + prop_name
-        try:
-            ctx.enter_field(
-                message,
-                full_name,
-                prop_name,
-                JSONUtils.get_type(prop_schema),
-                JSONUtils.get_inline_tags(prop_schema)
-            )
-            value = message[prop_name]
-            new_value = JSONUtils.transform(ctx, prop_schema, named_schemas, full_name, value, field_transform)
-            if ctx.rule.kind == RuleKind.CONDITION:
-                if new_value is False:
-                    raise RuleConditionError(ctx.rule)
-            else:
-                message[prop_name] = new_value
-        finally:
-            ctx.exit_field()
 
-    @staticmethod
-    def _validate_subschemas(subschemas, message):
-        for subschema in subschemas:
-            try:
-                validate(instance=message, schema=subschema)
-                return subschema
-            except ValidationError:
-                pass
-        return None
-
-    @staticmethod
-    def get_type(schema) -> FieldType:
-        if isinstance(schema, bool):
-            return FieldType.NULL
-        type = schema["type"]
-        if isinstance(type, list):
-            return FieldType.COMBINED
-        if schema.get("const") is not None or schema.get("enum") is not None:
-            return FieldType.ENUM
-        if type == "object":
-            props = schema.get("properties")
-            if props is None or len(props) == 0:
-                return FieldType.MAP
-            return FieldType.RECORD
-        if type == "array":
-            return FieldType.ARRAY
-        if type == "string":
-            return FieldType.STRING
-        if type == "integer":
-            return FieldType.INT
-        if type == "number":
-            return FieldType.DOUBLE
-        if type == "boolean":
-            return FieldType.BOOLEAN
-        if type == "null":
-            return FieldType.NULL
-        return FieldType.NULL
-
-    @staticmethod
-    def _disjoint(tags1: Set[str], tags2: Set[str]) -> bool:
-        for tag in tags1:
-            if tag in tags2:
-                return False
-        return True
-
-    @staticmethod
-    def get_inline_tags(schema) -> Set[str]:
-        tags = schema.get("confluent:tags")
-        if tags is None:
-            return set()
+def _transform_field(ctx: RuleContext, path: str, prop_name: str, message: JsonMessage,
+    prop_schema: JsonSchema, named_schemas: Dict[str, JsonSchema], field_transform: FieldTransform):
+    full_name = path + "." + prop_name
+    try:
+        ctx.enter_field(
+            message,
+            full_name,
+            prop_name,
+            get_type(prop_schema),
+            get_inline_tags(prop_schema)
+        )
+        value = message[prop_name]
+        new_value = transform(ctx, prop_schema, named_schemas, full_name, value, field_transform)
+        if ctx.rule.kind == RuleKind.CONDITION:
+            if new_value is False:
+                raise RuleConditionError(ctx.rule)
         else:
-            return set(tags)
+            message[prop_name] = new_value
+    finally:
+        ctx.exit_field()
 
 
+def _validate_subschemas(subschemas, message):
+    for subschema in subschemas:
+        try:
+            validate(instance=message, schema=subschema)
+            return subschema
+        except ValidationError:
+            pass
+    return None
 
 
+def get_type(schema) -> FieldType:
+    if isinstance(schema, bool):
+        return FieldType.NULL
+    type = schema["type"]
+    if isinstance(type, list):
+        return FieldType.COMBINED
+    if schema.get("const") is not None or schema.get("enum") is not None:
+        return FieldType.ENUM
+    if type == "object":
+        props = schema.get("properties")
+        if props is None or len(props) == 0:
+            return FieldType.MAP
+        return FieldType.RECORD
+    if type == "array":
+        return FieldType.ARRAY
+    if type == "string":
+        return FieldType.STRING
+    if type == "integer":
+        return FieldType.INT
+    if type == "number":
+        return FieldType.DOUBLE
+    if type == "boolean":
+        return FieldType.BOOLEAN
+    if type == "null":
+        return FieldType.NULL
+    return FieldType.NULL
 
+
+def _disjoint(tags1: Set[str], tags2: Set[str]) -> bool:
+    for tag in tags1:
+        if tag in tags2:
+            return False
+    return True
+
+
+def get_inline_tags(schema) -> Set[str]:
+    tags = schema.get("confluent:tags")
+    if tags is None:
+        return set()
+    else:
+        return set(tags)
