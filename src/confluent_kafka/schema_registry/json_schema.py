@@ -469,14 +469,12 @@ class JSONDeserializer(BaseDeserializer):
 
             if latest_schema is not None:
                 migrations = self._get_migrations(subject, writer_schema, latest_schema, None)
-
-            if len(migrations) > 0:
-                obj_dict = self._execute_migrations(ctx, subject, migrations, obj_dict)
-
-            if latest_schema is not None:
                 reader_schema, reader_named_schemas = self._get_parsed_schema(latest_schema.schema)
             else:
                 reader_schema, reader_naeed_schemas = writer_schema, writer_named_schemas
+
+            if len(migrations) > 0:
+                obj_dict = self._execute_migrations(ctx, subject, migrations, obj_dict)
 
             field_transformer = lambda rule_ctx, message, field_transform: (
                 JSONUtils.transform(rule_ctx, reader_schema, reader_named_schemas, "$", message, field_transform))

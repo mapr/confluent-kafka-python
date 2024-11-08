@@ -512,6 +512,9 @@ class AvroDeserializer(BaseDeserializer):
 
             if latest_schema is not None:
                 migrations = self._get_migrations(subject, writer_schema, latest_schema, None)
+                reader_schema = self._get_parsed_schema(latest_schema.schema)
+            else:
+                reader_schema = writer_schema
 
             if len(migrations) > 0:
                 obj_dict = schemaless_reader(payload,
@@ -524,11 +527,6 @@ class AvroDeserializer(BaseDeserializer):
                                              writer_schema,
                                              self._reader_schema,
                                              self._return_record_name)
-
-            if latest_schema is not None:
-                reader_schema = self._get_parsed_schema(latest_schema.schema)
-            else:
-                reader_schema = writer_schema
 
             field_transformer = lambda rule_ctx, message, field_transform: (
                 AvroUtils.transform(rule_ctx, reader_schema, message, field_transform))

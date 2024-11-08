@@ -24,6 +24,7 @@ from collections import deque
 from typing import Set, Any, List, Union
 
 from google.protobuf import descriptor_pb2
+from google.protobuf import json_format
 from google.protobuf.descriptor_pool import DescriptorPool
 
 import confluent_kafka.schema_registry.confluent.meta_pb2 as meta_pb2
@@ -154,7 +155,10 @@ def _str_to_schema(schema_str: str) -> descriptor_pb2.FileDescriptorProto:
     # TODO RAY is this right?
     #return descriptor_pb2.FileDescriptorProto.FromString(serialized_pb)
     file_descriptor_proto = descriptor_pb2.FileDescriptorProto()
-    return file_descriptor_proto.ParseFromString(serialized_pb)
+    try:
+        return file_descriptor_proto.ParseFromString(serialized_pb)
+    except DecodeError as e:
+        raise SerializationError(str(e))
 
 
 def _resolve_named_schema(schema, schema_registry_client, pool=None):
@@ -742,23 +746,32 @@ class ProtobufDeserializer(BaseDeserializer):
                 writer_schema = self._get_parsed_schema(registered_schema.schema)
                 self._writer_schemas[schema_id] = writer_schema
 
-            msg_desc = self._get_message_desc(writer_schema, msg_index)
+            writer_desc = self._get_message_desc(writer_schema, msg_index)
 
             if subject is None:
-                subject = self._subject_name_func(ctx, msg_desc.full_name)
+                subject = self._subject_name_func(ctx, writer_desc.full_name)
                 if subject is not None:
                     latest_schema = self._get_reader_schema(subject)
 
             if latest_schema is not None:
                 migrations = self._get_migrations(subject, writer_schema, latest_schema, None)
+                reader_schema = self._get_parsed_schema(latest_schema.schema)
+            else:
+                reader_schema = writer_schema
+
+            reader_desc = reader_schema.message_types_by_name[writer_desc.full_name]
 
             if len(migrations) > 0:
-                msg = GetMessageClass(msg_desc)()
+                msg = GetMessageClass(writer_desc)()
                 try:
                     msg.ParseFromString(payload.read())
                 except DecodeError as e:
                     raise SerializationError(str(e))
-                msg = self._execute_migrations(ctx, subject, migrations, msg)
+
+                obj_dict = json_format.MessageToDict(msg, always_print_fields_with_no_presence=True)
+                obj_dict = self._execute_migrations(ctx, subject, migrations, obj_dict)
+                msg = GetMessageClass(reader_desc)()
+                msg = json_format.ParseDict(obj_dict, msg)
             else:
                 # Protobuf Messages are self-describing; no need to query schema
                 msg = self._msg_class()
@@ -767,14 +780,8 @@ class ProtobufDeserializer(BaseDeserializer):
                 except DecodeError as e:
                     raise SerializationError(str(e))
 
-            if latest_schema is not None:
-                reader_schema = self._get_parsed_schema(latest_schema.schema)
-            else:
-                reader_schema = writer_schema
-
-            desc = reader_schema.message_types_by_name[msg.DESCRIPTOR.full_name]
             field_transformer = lambda rule_ctx, message, field_transform: (
-                ProtobufUtils.transform(rule_ctx, desc, message, field_transform))
+                ProtobufUtils.transform(rule_ctx, reader_desc, message, field_transform))
             msg = self._execute_rules(ctx, subject, RuleMode.READ, None,
                                            reader_schema, msg, None,
                                            field_transformer)
