@@ -273,25 +273,23 @@ class JSONSerializer(BaseSerializer):
 
         subject = self._subject_name_func(ctx, self._schema_name)
         latest_schema = self._get_reader_schema(subject)
-
-        if subject not in self._known_subjects:
-            if latest_schema is not None:
-                self._schema_id = latest_schema.schema_id
-
+        if latest_schema is not None:
+            self._schema_id = latest_schema.schema_id
+        elif subject not in self._known_subjects:
+            # Check to ensure this schema has been registered under subject_name.
+            if self._auto_register:
+                # The schema name will always be the same. We can't however register
+                # a schema without a subject so we set the schema_id here to handle
+                # the initial registration.
+                self._schema_id = self._registry.register_schema(subject,
+                                                                 self._schema,
+                                                                 self._normalize_schemas)
             else:
-                # Check to ensure this schema has been registered under subject_name.
-                if self._auto_register:
-                    # The schema name will always be the same. We can't however register
-                    # a schema without a subject so we set the schema_id here to handle
-                    # the initial registration.
-                    self._schema_id = self._registry.register_schema(subject,
-                                                                     self._schema,
-                                                                     self._normalize_schemas)
-                else:
-                    registered_schema = self._registry.lookup_schema(subject,
-                                                                     self._schema,
-                                                                     self._normalize_schemas)
-                    self._schema_id = registered_schema.schema_id
+                registered_schema = self._registry.lookup_schema(subject,
+                                                                 self._schema,
+                                                                 self._normalize_schemas)
+                self._schema_id = registered_schema.schema_id
+
             self._known_subjects.add(subject)
 
         if self._to_dict is not None:
@@ -313,8 +311,8 @@ class JSONSerializer(BaseSerializer):
         if latest_schema is not None:
             # TODO RAY cache
             parsed_schema, named_schemas = self._get_parsed_schema(latest_schema.schema)
-            field_transformer = lambda rule_ctx, message, field_transform: (
-                transform(rule_ctx, parsed_schema, named_schemas, "$", message, field_transform))
+            field_transformer = lambda rule_ctx, msg, field_transform: (
+                transform(rule_ctx, parsed_schema, named_schemas, "$", msg, field_transform))
             value = self._execute_rules(ctx, subject, RuleMode.WRITE, None,
                                         latest_schema, value, None,
                                         field_transformer)

@@ -479,22 +479,19 @@ class ProtobufSerializer(BaseSerializer):
         subject = self._subject_name_func(ctx,
                                           message.DESCRIPTOR.full_name)
         latest_schema = self._get_reader_schema(subject)
+        if latest_schema is not None:
+            self._schema_id = latest_schema.schema_id
+        elif subject not in self._known_subjects:
+            self._schema.references = self._resolve_dependencies(
+                ctx, message.DESCRIPTOR.file)
 
-        if subject not in self._known_subjects:
-            if latest_schema is not None:
-                self._schema_id = latest_schema.schema_id
-
+            if self._auto_register:
+                self._schema_id = self._registry.register_schema(subject,
+                                                                 self._schema,
+                                                                 self._normalize_schemas)
             else:
-                self._schema.references = self._resolve_dependencies(
-                    ctx, message.DESCRIPTOR.file)
-
-                if self._auto_register:
-                    self._schema_id = self._registry.register_schema(subject,
-                                                                     self._schema,
-                                                                     self._normalize_schemas)
-                else:
-                    self._schema_id = self._registry.lookup_schema(
-                        subject, self._schema, self._normalize_schemas).schema_id
+                self._schema_id = self._registry.lookup_schema(
+                    subject, self._schema, self._normalize_schemas).schema_id
 
             self._known_subjects.add(subject)
 
@@ -502,8 +499,8 @@ class ProtobufSerializer(BaseSerializer):
             # TODO RAY cache
             fd = self._get_parsed_schema(latest_schema.schema)
             desc = fd.message_types_by_name[message.DESCRIPTOR.full_name]
-            field_transformer = lambda rule_ctx, message, field_transform: (
-                transform(rule_ctx, desc, message, field_transform))
+            field_transformer = lambda rule_ctx, msg, field_transform: (
+                transform(rule_ctx, desc, msg, field_transform))
             message = self._execute_rules(ctx, subject, RuleMode.WRITE, None,
                                           latest_schema, message, None,
                                           field_transformer)
