@@ -254,10 +254,10 @@ class _SchemaCache(object):
 
     def remove_by_subject(self, subject_name):
         """
-        Remove a Schema from the cache.
+        Remove schemas with the given subject.
 
         Args:
-            subject_name (str): Subject name the schema is registered under.
+            subject_name (str): The subject
         """
 
         with self.lock:
