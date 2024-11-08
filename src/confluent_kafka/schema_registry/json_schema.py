@@ -457,6 +457,11 @@ class JSONDeserializer(BaseDeserializer):
             obj_dict = json.loads(payload.read())
 
             writer_schema, writer_named_schemas = self._writer_schemas.get(schema_id, None)
+            if writer_schema is None:
+                registered_schema = self._registry.get_schema(schema_id)
+                writer_schema, writer_named_schemas = self._get_parsed_schema(registered_schema.schema)
+                self._writer_schemas[schema_id] = writer_schema, writer_named_schemas
+
             if subject is None:
                 subject = self._subject_name_func(ctx, writer_schema.get("title"))
                 if subject is not None:
@@ -465,11 +470,6 @@ class JSONDeserializer(BaseDeserializer):
             if latest_schema is not None:
                 migrations = self._get_migrations(subject, writer_schema, latest_schema, None)
 
-            if writer_schema is None:
-                registered_schema = self._registry.get_schema(schema_id)
-                writer_schema, writer_named_schemas = self._get_parsed_schema(registered_schema.schema)
-                self._writer_schemas[schema_id] = writer_schema, writer_named_schemas
-
             if len(migrations) > 0:
                 obj_dict = self._execute_migrations(ctx, subject, migrations, obj_dict)
 
@@ -477,10 +477,11 @@ class JSONDeserializer(BaseDeserializer):
                 reader_schema, reader_named_schemas = self._get_parsed_schema(latest_schema.schema)
             else:
                 reader_schema, reader_naeed_schemas = writer_schema, writer_named_schemas
+
             field_transformer = lambda rule_ctx, message, field_transform: (
                 JSONUtils.transform(rule_ctx, reader_schema, reader_named_schemas, "$", message, field_transform))
-            obj_dict = self._execute_rules(ctx, subject, RuleMode.WRITE, None,
-                                           latest_schema, obj_dict, None,
+            obj_dict = self._execute_rules(ctx, subject, RuleMode.READ, None,
+                                           reader_schema, obj_dict, None,
                                            field_transformer)
 
             try:

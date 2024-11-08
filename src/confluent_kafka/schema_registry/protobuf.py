@@ -21,16 +21,17 @@ import base64
 import struct
 import warnings
 from collections import deque
-from typing import Set, Any
+from typing import Set, Any, List, Union
 
 from google.protobuf import descriptor_pb2
+from google.protobuf.descriptor_pool import DescriptorPool
 
 import confluent_kafka.schema_registry.confluent.meta_pb2 as meta_pb2
 
 from google.protobuf.descriptor import Descriptor, FieldDescriptor, \
     FileDescriptor
 from google.protobuf.message import DecodeError, Message
-from google.protobuf.message_factory import MessageFactory
+from google.protobuf.message_factory import GetMessageClass
 
 from . import (_MAGIC_BYTE,
                reference_subject_name_strategy,
@@ -151,25 +152,28 @@ def _str_to_schema(schema_str: str) -> descriptor_pb2.FileDescriptorProto:
 
     serialized_pb = base64.standard_b64decode(schema_str.encode('ascii'))
     # TODO RAY is this right?
-    return descriptor_pb2.FileDescriptorProto.FromString(serialized_pb)
+    #return descriptor_pb2.FileDescriptorProto.FromString(serialized_pb)
+    file_descriptor_proto = descriptor_pb2.FileDescriptorProto()
+    return file_descriptor_proto.ParseFromString(serialized_pb)
 
 
-def _resolve_named_schema(schema, schema_registry_client, named_schemas=None):
+def _resolve_named_schema(schema, schema_registry_client, pool=None):
     """
     Resolves named schemas referenced by the provided schema recursively.
     :param schema: Schema to resolve named schemas for.
     :param schema_registry_client: SchemaRegistryClient to use for retrieval.
-    :param named_schemas: Dict of named schemas resolved recursively.
+    :param pool: Descriptor pool to add resolved schemas to.
     :return: named_schemas dict.
     """
-    if named_schemas is None:
-        named_schemas = {}
+    if pool is None:
+        pool = DescriptorPool()
     if schema.references is not None:
         for ref in schema.references:
+            # TODO RAY pass format
             referenced_schema = schema_registry_client.get_version(ref.subject, ref.version)
-            _resolve_named_schema(referenced_schema.schema, schema_registry_client, named_schemas)
-            named_schemas[ref.name] = _str_to_schema(referenced_schema.schema.schema_str)
-    return named_schemas
+            _resolve_named_schema(referenced_schema.schema, schema_registry_client, pool)
+            pool.Add(_str_to_schema(referenced_schema.schema.schema_str))
+    return pool
 
 
 class ProtobufSerializer(BaseSerializer):
@@ -513,9 +517,10 @@ class ProtobufSerializer(BaseSerializer):
             return fo.getvalue()
 
     def _get_parsed_schema(self, schema: Schema) -> FileDescriptor:
-        # TODO RAY cache
-        # TODO fix
-        return None
+        pool = _resolve_named_schema(schema, self._registry)
+        fd = _str_to_schema(schema.schema_str)
+        pool.Add(fd)
+        return pool.FindFileByName(fd.name)
 
 
 class ProtobufDeserializer(BaseDeserializer):
@@ -606,7 +611,7 @@ class ProtobufDeserializer(BaseDeserializer):
 
         descriptor = message_type.DESCRIPTOR
         self._index_array = _create_index_array(descriptor)
-        self._msg_class = MessageFactory().GetPrototype(descriptor)
+        self._msg_class = GetMessageClass(descriptor)
 
     @staticmethod
     def _decode_varint(buf, zigzag=True):
@@ -729,52 +734,69 @@ class ProtobufDeserializer(BaseDeserializer):
                                          "not produced with a Confluent "
                                          "Schema Registry serializer")
 
-            # Protobuf Messages are self-describing; no need to query schema
-            _ = self._read_index_array(payload, zigzag=not self._use_deprecated_format)
-            msg = self._msg_class()
-            try:
-                msg.ParseFromString(payload.read())
-            except DecodeError as e:
-                raise SerializationError(str(e))
+            msg_index = self._read_index_array(payload, zigzag=not self._use_deprecated_format)
 
             writer_schema = self._writer_schemas.get(schema_id, None)
+            if writer_schema is None:
+                registered_schema = self._registry.get_schema(schema_id)
+                writer_schema = self._get_parsed_schema(registered_schema.schema)
+                self._writer_schemas[schema_id] = writer_schema
+
+            msg_desc = self._get_message_desc(writer_schema, msg_index)
+
             if subject is None:
-                subject = self._subject_name_func(ctx, msg.DESCRIPTOR.full_name)
+                subject = self._subject_name_func(ctx, msg_desc.full_name)
                 if subject is not None:
                     latest_schema = self._get_reader_schema(subject)
 
             if latest_schema is not None:
                 migrations = self._get_migrations(subject, writer_schema, latest_schema, None)
 
-            if writer_schema is None:
-                registered_schema = self._registry.get_schema(schema_id)
-                writer_schema = self._get_parsed_schema(registered_schema.schema)
-                self._writer_schemas[schema_id] = writer_schema
-
             if len(migrations) > 0:
+                msg = GetMessageClass(msg_desc)()
+                try:
+                    msg.ParseFromString(payload.read())
+                except DecodeError as e:
+                    raise SerializationError(str(e))
                 msg = self._execute_migrations(ctx, subject, migrations, msg)
+            else:
+                # Protobuf Messages are self-describing; no need to query schema
+                msg = self._msg_class()
+                try:
+                    msg.ParseFromString(payload.read())
+                except DecodeError as e:
+                    raise SerializationError(str(e))
 
             if latest_schema is not None:
                 reader_schema = self._get_parsed_schema(latest_schema.schema)
             else:
                 reader_schema = writer_schema
+
+            desc = reader_schema.message_types_by_name[msg.DESCRIPTOR.full_name]
             field_transformer = lambda rule_ctx, message, field_transform: (
-                ProtobufUtils.transform(rule_ctx, reader_schema, message, field_transform))
-            msg = self._execute_rules(ctx, subject, RuleMode.WRITE, None,
-                                           latest_schema, msg, None,
+                ProtobufUtils.transform(rule_ctx, desc, message, field_transform))
+            msg = self._execute_rules(ctx, subject, RuleMode.READ, None,
+                                           reader_schema, msg, None,
                                            field_transformer)
 
             return msg
 
     def _get_parsed_schema(self, schema: Schema) -> FileDescriptor:
-        # TODO RAY cache
-        # TODO fix
-        return None
+        pool = _resolve_named_schema(schema, self._registry)
+        fd = _str_to_schema(schema.schema_str)
+        pool.Add(fd)
+        return pool.FindFileByName(fd.name)
 
-    def _field_transform(self, rule_ctx: RuleContext, fd: FileDescriptor, message: Any,
-        field_transform: FieldTransform) -> Any:
-        desc = fd.message_types_by_name[message.DESCRIPTOR.full_name]
-        return ProtobufUtils.transform(rule_ctx, desc, message, field_transform)
+    def _get_message_desc(self, desc: Union[FileDescriptor, Descriptor], msg_index: List[int]) -> Descriptor:
+        index = msg_index[0]
+        if isinstance(desc, FileDescriptor):
+            if len(msg_index) == 1:
+                return desc.message_types_by_name[index]
+            return self._get_message_desc(desc.message_types_by_name[index], msg_index[1:])
+        else:
+            if len(msg_index) == 1:
+                return desc.nested_types[index]
+            return self._get_message_desc(desc.nested_types[index], msg_index[1:])
 
 
 class ProtobufUtils(object):

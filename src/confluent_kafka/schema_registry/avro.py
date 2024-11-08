@@ -500,6 +500,11 @@ class AvroDeserializer(BaseDeserializer):
                                          "Schema Registry serializer".format(magic))
 
             writer_schema = self._writer_schemas.get(schema_id, None)
+            if writer_schema is None:
+                registered_schema = self._registry.get_schema(schema_id)
+                writer_schema = self._get_parsed_schema(registered_schema.schema)
+                self._writer_schemas[schema_id] = writer_schema
+
             if subject is None:
                 subject = self._subject_name_func(ctx, writer_schema.get("name"))
                 if subject is not None:
@@ -507,11 +512,6 @@ class AvroDeserializer(BaseDeserializer):
 
             if latest_schema is not None:
                 migrations = self._get_migrations(subject, writer_schema, latest_schema, None)
-
-            if writer_schema is None:
-                registered_schema = self._registry.get_schema(schema_id)
-                writer_schema = self._get_parsed_schema(registered_schema.schema)
-                self._writer_schemas[schema_id] = writer_schema
 
             if len(migrations) > 0:
                 obj_dict = schemaless_reader(payload,
@@ -529,11 +529,12 @@ class AvroDeserializer(BaseDeserializer):
                 reader_schema = self._get_parsed_schema(latest_schema.schema)
             else:
                 reader_schema = writer_schema
+
             field_transformer = lambda rule_ctx, message, field_transform: (
                 AvroUtils.transform(rule_ctx, reader_schema, message, field_transform))
-            obj_dict = self._execute_rules(ctx, subject, RuleMode.WRITE, None,
+            obj_dict = self._execute_rules(ctx, subject, RuleMode.READ, None,
                                            # TODO RAY - check if we need to get inline tags from named_schemas
-                                           latest_schema, obj_dict, AvroUtils.get_inline_tags(reader_schema),
+                                           reader_schema, obj_dict, AvroUtils.get_inline_tags(reader_schema),
                                            field_transformer)
 
             if self._from_dict is not None:
