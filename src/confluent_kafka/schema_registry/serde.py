@@ -459,7 +459,7 @@ class ParsedSchemaCache(object):
         Args:
             schema (Schema): The schema
 
-            parsed_schema (object): The parsed schema
+            parsed_schema (Any): The parsed schema
         """
 
         with self.lock:
