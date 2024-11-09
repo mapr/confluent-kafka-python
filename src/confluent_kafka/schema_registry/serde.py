@@ -156,6 +156,7 @@ FieldTransformer = Callable[[RuleContext, FieldTransform, Any], Any]
 
 
 class RuleBase(object):
+    # TODO RAY type hints
     def configure(self, client_conf, conf):
         pass
 

@@ -935,7 +935,6 @@ class SchemaRegistryClient(object):
         self._metadata_cache.clear()
 
 
-
 T = TypeVar("T")
 
 

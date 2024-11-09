@@ -27,11 +27,24 @@ from confluent_kafka.schema_registry import (_MAGIC_BYTE,
                                              Schema,
                                              topic_subject_name_strategy,
                                              RuleKind,
-                                             RuleMode)
+                                             RuleMode, SchemaRegistryClient)
 from confluent_kafka.schema_registry.serde import BaseSerializer, \
     BaseDeserializer, RuleContext, FieldTransform, FieldType, \
     RuleConditionError, ParsedSchemaCache
 from confluent_kafka.serialization import (SerializationError)
+
+
+JsonMessage = Union[
+    None,  # 'null' Avro type
+    str,  # 'string' and 'enum'
+    float,  # 'float' and 'double'
+    int,  # 'int' and 'long'
+    decimal.Decimal,  # 'fixed'
+    bool,  # 'boolean'
+    List[Any],  # 'array'
+    Dict[Any, Any],  # 'map' and 'record'
+]
+JsonSchema = Union[bool, Dict[Any, Any]]
 
 
 class _ContextStringIO(BytesIO):
@@ -47,7 +60,8 @@ class _ContextStringIO(BytesIO):
         return False
 
 
-def _resolve_named_schema(schema, schema_registry_client, named_schemas=None):
+def _resolve_named_schema(schema: Schema, schema_registry_client: SchemaRegistryClient,
+    named_schemas: Dict[str, JsonSchema] = None) -> Dict[str, JsonSchema]:
     """
     Resolves named schemas referenced by the provided schema recursively.
     :param schema: Schema to resolve named schemas for.
@@ -64,19 +78,6 @@ def _resolve_named_schema(schema, schema_registry_client, named_schemas=None):
             referenced_schema_dict = json.loads(referenced_schema.schema.schema_str)
             named_schemas[ref.name] = referenced_schema_dict
     return named_schemas
-
-
-JsonMessage = Union[
-    None,  # 'null' Avro type
-    str,  # 'string' and 'enum'
-    float,  # 'float' and 'double'
-    int,  # 'int' and 'long'
-    decimal.Decimal,  # 'fixed'
-    bool,  # 'boolean'
-    List[Any],  # 'array'
-    Dict[Any, Any],  # 'map' and 'record'
-]
-JsonSchema = Union[bool, Dict[Any, Any]]
 
 
 class JSONSerializer(BaseSerializer):
@@ -588,7 +589,8 @@ def _transform_field(ctx: RuleContext, path: str, prop_name: str, message: JsonM
         ctx.exit_field()
 
 
-def _validate_subschemas(subschemas, message):
+def _validate_subschemas(subschemas: List[JsonSchema],
+    message: str) -> Optional[JsonSchema]:
     for subschema in subschemas:
         try:
             validate(instance=message, schema=subschema)
@@ -598,7 +600,7 @@ def _validate_subschemas(subschemas, message):
     return None
 
 
-def get_type(schema) -> FieldType:
+def get_type(schema: JsonSchema) -> FieldType:
     if isinstance(schema, bool):
         return FieldType.NULL
     type = schema["type"]
@@ -633,7 +635,7 @@ def _disjoint(tags1: Set[str], tags2: Set[str]) -> bool:
     return True
 
 
-def get_inline_tags(schema) -> Set[str]:
+def get_inline_tags(schema: JsonSchema) -> Set[str]:
     tags = schema.get("confluent:tags")
     if tags is None:
         return set()

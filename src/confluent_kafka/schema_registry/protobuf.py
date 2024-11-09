@@ -36,12 +36,13 @@ from google.protobuf.message_factory import GetMessageClass
 
 from . import (_MAGIC_BYTE,
                reference_subject_name_strategy,
-               topic_subject_name_strategy)
+               topic_subject_name_strategy, SchemaRegistryClient)
 from .schema_registry_client import (Schema,
                                      SchemaReference,
                                      RuleKind,
                                      RuleMode)
-from confluent_kafka.serialization import SerializationError
+from confluent_kafka.serialization import SerializationError, \
+    SerializationContext
 from .serde import BaseSerializer, BaseDeserializer, RuleContext, \
     FieldTransform, FieldType, RuleConditionError, ParsedSchemaCache
 
@@ -81,7 +82,7 @@ class _ContextStringIO(io.BytesIO):
         return False
 
 
-def _create_index_array(msg_desc):
+def _create_index_array(msg_desc: Descriptor) -> List[int]:
     """
     Creates an index array specifying the location of msg_desc in
     the referenced FileDescriptor.
@@ -161,7 +162,8 @@ def _str_to_schema(schema_str: str) -> descriptor_pb2.FileDescriptorProto:
         raise SerializationError(str(e))
 
 
-def _resolve_named_schema(schema, schema_registry_client, pool=None):
+def _resolve_named_schema(schema: Schema, schema_registry_client: SchemaRegistryClient,
+    pool: DescriptorPool = None) -> DescriptorPool:
     """
     Resolves named schemas referenced by the provided schema recursively.
     :param schema: Schema to resolve named schemas for.
@@ -383,7 +385,7 @@ class ProtobufSerializer(BaseSerializer):
                               schema_type='PROTOBUF')
 
     @staticmethod
-    def _write_varint(buf, val, zigzag=True):
+    def _write_varint(buf, val: int, zigzag=True):
         """
         Writes val to buf, either using zigzag or uvarint encoding.
 
@@ -423,7 +425,8 @@ class ProtobufSerializer(BaseSerializer):
         for value in ints:
             ProtobufSerializer._write_varint(buf, value, zigzag=zigzag)
 
-    def _resolve_dependencies(self, ctx, file_desc):
+    def _resolve_dependencies(self, ctx: SerializationContext,
+        file_desc: FileDescriptor) -> List[SchemaReference]:
         """
         Resolves and optionally registers schema references recursively.
 
@@ -804,7 +807,8 @@ class ProtobufDeserializer(BaseDeserializer):
         self._parsed_schemas.set(schema, fd)
         return fd
 
-    def _get_message_desc(self, desc: Union[FileDescriptor, Descriptor], msg_index: List[int]) -> Descriptor:
+    def _get_message_desc(self, desc: Union[FileDescriptor, Descriptor],
+        msg_index: List[int]) -> Descriptor:
         index = msg_index[0]
         if isinstance(desc, FileDescriptor):
             if len(msg_index) == 1:

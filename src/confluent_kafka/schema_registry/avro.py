@@ -30,10 +30,24 @@ from . import (_MAGIC_BYTE,
                Schema,
                topic_subject_name_strategy,
                RuleMode,
-               RuleKind)
+               RuleKind, SchemaRegistryClient)
 from confluent_kafka.serialization import (SerializationError)
 from .serde import BaseSerializer, BaseDeserializer, RuleContext, FieldType, \
     FieldTransform, RuleConditionError, ParsedSchemaCache
+
+
+AvroMessage = Union[
+    None,  # 'null' Avro type
+    str,  # 'string' and 'enum'
+    float,  # 'float' and 'double'
+    int,  # 'int' and 'long'
+    decimal.Decimal,  # 'fixed'
+    bool,  # 'boolean'
+    bytes,  # 'bytes'
+    List[Any],  # 'array'
+    Dict[Any, Any],  # 'map' and 'record'
+]
+AvroSchema = Union[str, List[Any], Dict[Any, Any]]
 
 
 class _ContextStringIO(BytesIO):
@@ -72,7 +86,8 @@ def _schema_loads(schema_str: str) -> Schema:
     return Schema(schema_str, schema_type='AVRO')
 
 
-def _resolve_named_schema(schema, schema_registry_client, named_schemas=None):
+def _resolve_named_schema(schema: Schema, schema_registry_client: SchemaRegistryClient,
+    named_schemas: Dict[str, AvroSchema] = None) -> Dict[str, AvroSchema]:
     """
     Resolves named schemas referenced by the provided schema recursively.
     :param schema: Schema to resolve named schemas for.
@@ -86,22 +101,9 @@ def _resolve_named_schema(schema, schema_registry_client, named_schemas=None):
         for ref in schema.references:
             referenced_schema = schema_registry_client.get_version(ref.subject, ref.version)
             _resolve_named_schema(referenced_schema.schema, schema_registry_client, named_schemas)
-            parse_schema(loads(referenced_schema.schema.schema_str), named_schemas=named_schemas)
+            parsed_schema = parse_schema(loads(referenced_schema.schema.schema_str), named_schemas=named_schemas)
+            named_schemas[ref.name] = parsed_schema
     return named_schemas
-
-
-AvroMessage = Union[
-    None,  # 'null' Avro type
-    str,  # 'string' and 'enum'
-    float,  # 'float' and 'double'
-    int,  # 'int' and 'long'
-    decimal.Decimal,  # 'fixed'
-    bool,  # 'boolean'
-    bytes,  # 'bytes'
-    List[Any],  # 'array'
-    Dict[Any, Any],  # 'map' and 'record'
-]
-AvroSchema = Union[str, List[Any], Dict[Any, Any]]
 
 
 class AvroSerializer(BaseSerializer):
