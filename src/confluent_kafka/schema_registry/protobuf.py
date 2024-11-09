@@ -498,7 +498,6 @@ class ProtobufSerializer(BaseSerializer):
             self._known_subjects.add(subject)
 
         if latest_schema is not None:
-            # TODO RAY cache
             fd = self._get_parsed_schema(latest_schema.schema)
             desc = fd.message_types_by_name[message.DESCRIPTOR.full_name]
             field_transformer = lambda rule_ctx, msg, field_transform: (

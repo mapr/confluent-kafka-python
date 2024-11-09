@@ -339,7 +339,6 @@ class AvroSerializer(BaseSerializer):
             value = obj
 
         if latest_schema is not None:
-            # TODO RAY cache
             parsed_schema = self._get_parsed_schema(latest_schema.schema)
             field_transformer = lambda rule_ctx, msg, field_transform: (
                 transform(rule_ctx, parsed_schema, msg, field_transform))
@@ -605,7 +604,6 @@ def _transform_field(ctx: RuleContext, schema: AvroSchema, field: Dict[str, Any]
             message,
             full_name,
             name,
-            # TODO RAY is this right?
             get_type(type),
             None
         )

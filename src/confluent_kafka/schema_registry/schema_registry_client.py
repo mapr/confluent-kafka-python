@@ -1315,7 +1315,6 @@ class Schema(object):
         self.references = references
         self.metadata = metadata
         self.rule_set = rule_set
-        # TODO RAY - fix hash
         self._hash = hash(schema_str)
 
     def __eq__(self, other):

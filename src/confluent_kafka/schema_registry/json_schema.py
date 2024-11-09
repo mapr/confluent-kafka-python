@@ -311,7 +311,6 @@ class JSONSerializer(BaseSerializer):
             raise SerializationError(ve.message)
 
         if latest_schema is not None:
-            # TODO RAY cache
             parsed_schema, named_schemas = self._get_parsed_schema(latest_schema.schema)
             field_transformer = lambda rule_ctx, msg, field_transform: (
                 transform(rule_ctx, parsed_schema, named_schemas, "$", msg, field_transform))
