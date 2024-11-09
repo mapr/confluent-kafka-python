@@ -33,7 +33,7 @@ from . import (_MAGIC_BYTE,
                RuleKind)
 from confluent_kafka.serialization import (SerializationError)
 from .serde import BaseSerializer, BaseDeserializer, RuleContext, FieldType, \
-    FieldTransform, RuleConditionError
+    FieldTransform, RuleConditionError, ParsedSchemaCache
 
 
 class _ContextStringIO(BytesIO):
@@ -202,8 +202,8 @@ class AvroSerializer(BaseSerializer):
 
         conf (dict): AvroSerializer configuration.
     """  # noqa: E501
-    __slots__ = ['_hash', '_known_subjects', '_parsed_schema',
-                 '_schema', '_schema_id', '_schema_name', '_to_dict']
+    __slots__ = ['_hash', '_known_subjects', '_parsed_schema', '_schema',
+                 '_schema_id', '_schema_name', '_to_dict', '_parsed_schemas']
 
     _default_conf = {'auto.register.schemas': True,
                      'normalize.schemas': False,
@@ -225,6 +225,7 @@ class AvroSerializer(BaseSerializer):
         self._schema_id = None
         self._rule_registry = rule_registry
         self._known_subjects = set()
+        self._parsed_schemas = ParsedSchemaCache()
 
         if to_dict is not None and not callable(to_dict):
             raise ValueError("to_dict must be callable with the signature "
@@ -346,20 +347,28 @@ class AvroSerializer(BaseSerializer):
                                         # TODO RAY - check if we need to get inline tags from named_schemas
                                         latest_schema, value, get_inline_tags(parsed_schema),
                                         field_transformer)
+        else:
+            parsed_schema = self._parsed_schema
 
         with _ContextStringIO() as fo:
             # Write the magic byte and schema ID in network byte order (big endian)
             fo.write(pack('>bI', _MAGIC_BYTE, self._schema_id))
             # write the record to the rest of the buffer
-            schemaless_writer(fo, self._parsed_schema, value)
+            schemaless_writer(fo, parsed_schema, value)
 
             return fo.getvalue()
 
     def _get_parsed_schema(self, schema: Schema) -> AvroSchema:
+        parsed_schema = self._parsed_schemas.get_parsed_schema(schema)
+        if parsed_schema is not None:
+            return parsed_schema
+
         named_schemas = _resolve_named_schema(schema, self._registry)
         prepared_schema = _schema_loads(schema.schema_str)
         parsed_schema = parse_schema(
             loads(prepared_schema.schema_str), named_schemas=named_schemas)
+
+        self._parsed_schemas.set(schema, parsed_schema)
         return parsed_schema
 
 
@@ -399,7 +408,8 @@ class AvroDeserializer(BaseDeserializer):
         `Apache Avro Schema Resolution <https://avro.apache.org/docs/1.8.2/spec.html#Schema+Resolution>`_
     """
 
-    __slots__ = ['_reader_schema', '_from_dict', '_writer_schemas', '_return_record_name', '_schema']
+    __slots__ = ['_reader_schema', '_from_dict', '_return_record_name',
+                 '_schema', '_parsed_schemas']
 
     _default_conf = {'use.latest.version': False,
                      'use.latest.with.metadata': None,
@@ -420,7 +430,7 @@ class AvroDeserializer(BaseDeserializer):
         self._schema = schema
         self._registry = schema_registry_client
         self._rule_registry = rule_registry
-        self._writer_schemas = {}
+        self._parsed_schemas = ParsedSchemaCache()
 
         conf_copy = self._default_conf.copy()
         if conf is not None:
@@ -497,11 +507,8 @@ class AvroDeserializer(BaseDeserializer):
                                          "was not produced with a Confluent "
                                          "Schema Registry serializer".format(magic))
 
-            writer_schema = self._writer_schemas.get(schema_id, None)
-            if writer_schema is None:
-                registered_schema = self._registry.get_schema(schema_id)
-                writer_schema = self._get_parsed_schema(registered_schema.schema)
-                self._writer_schemas[schema_id] = writer_schema
+            writer_schema_raw = self._registry.get_schema(schema_id)
+            writer_schema = self._get_parsed_schema(writer_schema_raw.schema)
 
             if subject is None:
                 subject = self._subject_name_func(ctx, writer_schema.get("name"))
@@ -509,9 +516,11 @@ class AvroDeserializer(BaseDeserializer):
                     latest_schema = self._get_reader_schema(subject)
 
             if latest_schema is not None:
-                migrations = self._get_migrations(subject, writer_schema, latest_schema, None)
+                migrations = self._get_migrations(subject, writer_schema_raw, latest_schema, None)
+                reader_schema_raw = latest_schema
                 reader_schema = self._get_parsed_schema(latest_schema.schema)
             else:
+                reader_schema_raw = writer_schema_raw
                 reader_schema = writer_schema
 
             if len(migrations) > 0:
@@ -530,7 +539,7 @@ class AvroDeserializer(BaseDeserializer):
                 transform(rule_ctx, reader_schema, message, field_transform))
             obj_dict = self._execute_rules(ctx, subject, RuleMode.READ, None,
                                            # TODO RAY - check if we need to get inline tags from named_schemas
-                                           reader_schema, obj_dict, get_inline_tags(reader_schema),
+                                           reader_schema_raw, obj_dict, get_inline_tags(reader_schema),
                                            field_transformer)
 
             if self._from_dict is not None:
@@ -539,10 +548,16 @@ class AvroDeserializer(BaseDeserializer):
             return obj_dict
 
     def _get_parsed_schema(self, schema: Schema) -> AvroSchema:
+        parsed_schema = self._parsed_schemas.get_parsed_schema(schema)
+        if parsed_schema is not None:
+            return parsed_schema
+
         named_schemas = _resolve_named_schema(schema, self._registry)
         prepared_schema = _schema_loads(schema.schema_str)
         parsed_schema = parse_schema(
             loads(prepared_schema.schema_str), named_schemas=named_schemas)
+
+        self._parsed_schemas.set(schema, parsed_schema)
         return parsed_schema
 
 

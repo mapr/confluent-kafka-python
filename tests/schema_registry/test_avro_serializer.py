@@ -86,7 +86,7 @@ def test_avro_serializer_config_use_latest_version(mock_schema_registry):
     test_serializer = AvroSerializer(test_client, '"string"',
                                      conf={'auto.register.schemas': False, 'use.latest.version': True})
 
-    test_serializer("test",
+    test_serializer({'name': 'Bob', 'age': 30},
                     SerializationContext("test-use-latest-version",
                                          MessageField.KEY))
 

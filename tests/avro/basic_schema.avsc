@@ -10,15 +10,15 @@
             "type": [
                 "long",
                 "null"
-            ],
-            "confluent:tags": [ "PII" ]
+            ]
         },
         {
             "name": "name",
             "doc": "a name",
             "type": [
                 "string"
-            ]
+            ],
+            "confluent:tags": [ "PII" ]
         }
     ]
 }

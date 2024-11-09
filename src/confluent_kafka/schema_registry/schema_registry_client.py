@@ -346,6 +346,20 @@ class _RegisteredSchemaCache(object):
         with self.lock:
             return self.schema_index.get(subject_name, {}).get(schema, None)
 
+    def remove_by_subject(self, subject_name):
+        """
+        Remove schemas with the given subject.
+
+        Args:
+            subject_name (str): The subject
+        """
+
+        with self.lock:
+            if subject_name in self.schema_index:
+                del self.schema_index[subject_name]
+            if subject_name in self.schema_version_index:
+                del self.schema_version_index[subject_name]
+
     def clear(self):
         """
         Clear the cache.
@@ -611,6 +625,7 @@ class SchemaRegistryClient(object):
                                      .format(_urlencode(subject_name)))
 
         self._cache.remove_by_subject(subject_name)
+        self._metadata_cache.remove_by_subject(subject_name)
 
         return list
 

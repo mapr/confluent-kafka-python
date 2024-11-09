@@ -43,7 +43,7 @@ from .schema_registry_client import (Schema,
                                      RuleMode)
 from confluent_kafka.serialization import SerializationError
 from .serde import BaseSerializer, BaseDeserializer, RuleContext, \
-    FieldTransform, FieldType, RuleConditionError
+    FieldTransform, FieldType, RuleConditionError, ParsedSchemaCache
 
 # Convert an int to bytes (inverse of ord())
 # Python3.chr() -> Unicode
@@ -292,8 +292,9 @@ class ProtobufSerializer(BaseSerializer):
     See Also:
         `Protobuf API reference <https://googleapis.dev/python/protobuf/latest/google/protobuf.html>`_
     """  # noqa: E501
-    __slots__ = ['_skip_known_types', '_known_subjects', '_msg_class', '_index_array', '_schema', '_schema_id',
-                 '_ref_reference_subject_func', '_use_deprecated_format']
+    __slots__ = ['_skip_known_types', '_known_subjects', '_msg_class', '_index_array',
+                 '_schema', '_schema_id', '_ref_reference_subject_func',
+                 '_use_deprecated_format', '_parsed_schemas']
 
     _default_conf = {
         'auto.register.schemas': True,
@@ -374,6 +375,7 @@ class ProtobufSerializer(BaseSerializer):
         self._schema_id = None
         self._known_subjects = set()
         self._msg_class = msg_type
+        self._parsed_schemas = ParsedSchemaCache()
 
         descriptor = msg_type.DESCRIPTOR
         self._index_array = _create_index_array(descriptor)
@@ -518,10 +520,17 @@ class ProtobufSerializer(BaseSerializer):
             return fo.getvalue()
 
     def _get_parsed_schema(self, schema: Schema) -> FileDescriptor:
+        fd = self._parsed_schemas.get_parsed_schema(schema)
+        if fd is not None:
+            return fd
+
         pool = _resolve_named_schema(schema, self._registry)
-        fd = _str_to_schema(schema.schema_str)
-        pool.Add(fd)
-        return pool.FindFileByName(fd.name)
+        fd_proto = _str_to_schema(schema.schema_str)
+        pool.Add(fd_proto)
+        fd = pool.FindFileByName(fd_proto.name)
+
+        self._parsed_schemas.set(schema, fd)
+        return fd
 
 
 class ProtobufDeserializer(BaseDeserializer):
@@ -554,7 +563,7 @@ class ProtobufDeserializer(BaseDeserializer):
     `Protobuf API reference <https://googleapis.dev/python/protobuf/latest/google/protobuf.html>`_
     """
 
-    __slots__ = ['_msg_class', '_index_array', '_writer_schemas', '_use_deprecated_format']
+    __slots__ = ['_msg_class', '_index_array', '_use_deprecated_format', '_parsed_schemas']
 
     _default_conf = {
         'use.latest.version': False,
@@ -568,7 +577,7 @@ class ProtobufDeserializer(BaseDeserializer):
 
         self._registry = schema_registry_client
         self._rule_registry = rule_registry
-        self._writer_schemas = {}
+        self._parsed_schemas = ParsedSchemaCache()
 
         # Require use.deprecated.format to be explicitly configured
         # during a transitionary period since old/new format are
@@ -737,12 +746,8 @@ class ProtobufDeserializer(BaseDeserializer):
 
             msg_index = self._read_index_array(payload, zigzag=not self._use_deprecated_format)
 
-            writer_schema = self._writer_schemas.get(schema_id, None)
-            if writer_schema is None:
-                registered_schema = self._registry.get_schema(schema_id)
-                writer_schema = self._get_parsed_schema(registered_schema.schema)
-                self._writer_schemas[schema_id] = writer_schema
-
+            writer_schema_raw = self._registry.get_schema(schema_id)
+            writer_schema = self._get_parsed_schema(writer_schema_raw.schema)
             writer_desc = self._get_message_desc(writer_schema, msg_index)
 
             if subject is None:
@@ -751,9 +756,11 @@ class ProtobufDeserializer(BaseDeserializer):
                     latest_schema = self._get_reader_schema(subject)
 
             if latest_schema is not None:
-                migrations = self._get_migrations(subject, writer_schema, latest_schema, None)
+                migrations = self._get_migrations(subject, writer_schema_raw, latest_schema, None)
+                reader_schema_raw = latest_schema
                 reader_schema = self._get_parsed_schema(latest_schema.schema)
             else:
+                reader_schema_raw = writer_schema_raw
                 reader_schema = writer_schema
 
             reader_desc = reader_schema.message_types_by_name[writer_desc.full_name]
@@ -780,16 +787,23 @@ class ProtobufDeserializer(BaseDeserializer):
             field_transformer = lambda rule_ctx, message, field_transform: (
                 transform(rule_ctx, reader_desc, message, field_transform))
             msg = self._execute_rules(ctx, subject, RuleMode.READ, None,
-                                           reader_schema, msg, None,
+                                           reader_schema_raw, msg, None,
                                            field_transformer)
 
             return msg
 
     def _get_parsed_schema(self, schema: Schema) -> FileDescriptor:
+        fd = self._parsed_schemas.get_parsed_schema(schema)
+        if fd is not None:
+            return fd
+
         pool = _resolve_named_schema(schema, self._registry)
-        fd = _str_to_schema(schema.schema_str)
-        pool.Add(fd)
-        return pool.FindFileByName(fd.name)
+        fd_proto = _str_to_schema(schema.schema_str)
+        pool.Add(fd_proto)
+        fd = pool.FindFileByName(fd_proto.name)
+
+        self._parsed_schemas.set(schema, fd)
+        return fd
 
     def _get_message_desc(self, desc: Union[FileDescriptor, Descriptor], msg_index: List[int]) -> Descriptor:
         index = msg_index[0]

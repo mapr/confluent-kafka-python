@@ -22,6 +22,7 @@ __all__ = ['BaseSerializer',
            'FieldTransform',
            'FieldTransformer',
            'FieldType',
+           'ParsedSchemaCache',
            'RuleAction',
            'RuleContext',
            'RuleConditionError',
@@ -30,6 +31,7 @@ __all__ = ['BaseSerializer',
 
 import logging
 from enum import Enum
+from threading import Lock
 from typing import Callable, List, Optional, Set, Dict, Any
 
 from confluent_kafka.schema_registry import RegisteredSchema
@@ -439,6 +441,50 @@ class BaseDeserializer(BaseSerde, Deserializer):
                                           None, None)
         return message
 
+
+class ParsedSchemaCache(object):
+    """
+    Thread-safe cache for parsed chemas
+    """
+
+    def __init__(self):
+        self.lock = Lock()
+        self.parsed_schemas = {}
+
+    def set(self, schema: Schema, parsed_schema: Any):
+        """
+        Add a Schema identified by schema_id to the cache.
+
+        Args:
+            schema (Schema): The schema
+
+            parsed_schema (Any): The parsed schema
+        """
+
+        with self.lock:
+            self.parsed_schemas[schema] = parsed_schema
+
+    def get_parsed_schema(self, schema: Schema) -> Any:
+        """
+        Get the parsed schema associated with the schema
+
+        Args:
+            schema (Schema): The schema
+
+        Returns:
+            The parsed schema if known; else None
+        """
+
+        with self.lock:
+            return self.parsed_schemas.get(schema, None)
+
+    def clear(self):
+        """
+        Clear the cache.
+        """
+
+        with self.lock:
+            self.parsed_schemas.clear()
 
 
 

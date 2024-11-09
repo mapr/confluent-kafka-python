@@ -29,7 +29,8 @@ from confluent_kafka.schema_registry import (_MAGIC_BYTE,
                                              RuleKind,
                                              RuleMode)
 from confluent_kafka.schema_registry.serde import BaseSerializer, \
-    BaseDeserializer, RuleContext, FieldTransform, FieldType, RuleConditionError
+    BaseDeserializer, RuleContext, FieldTransform, FieldType, \
+    RuleConditionError, ParsedSchemaCache
 from confluent_kafka.serialization import (SerializationError)
 
 
@@ -180,8 +181,8 @@ class JSONSerializer(BaseSerializer):
 
         conf (dict): JsonSerializer configuration.
     """  # noqa: E501
-    __slots__ = ['_hash', '_known_subjects', '_parsed_schema', '_named_schemas', '_schema', '_schema_id',
-                 '_schema_name', '_to_dict']
+    __slots__ = ['_hash', '_known_subjects', '_parsed_schema', '_named_schemas',
+                 '_schema', '_schema_id', '_schema_name', '_to_dict', '_parsed_schemas']
 
     _default_conf = {'auto.register.schemas': True,
                      'normalize.schemas': False,
@@ -201,6 +202,7 @@ class JSONSerializer(BaseSerializer):
         self._rule_registry = rule_registry
         self._schema_id = None
         self._known_subjects = set()
+        self._parsed_schemas = ParsedSchemaCache()
 
         if to_dict is not None and not callable(to_dict):
             raise ValueError("to_dict must be callable with the signature "
@@ -329,8 +331,15 @@ class JSONSerializer(BaseSerializer):
     def _get_parsed_schema(self, schema: Schema) -> Tuple[Optional[JsonSchema], Dict[str, JsonSchema]]:
         if schema is None:
             return None, {}
+
+        parsed_schema, named_schemas = self._parsed_schemas.get_parsed_schema(schema)
+        if parsed_schema is not None:
+            return parsed_schema, named_schemas
+
         named_schemas = _resolve_named_schema(schema, self._registry)
         parsed_schema = json.loads(schema.schema_str)
+
+        self._parsed_schemas.set(schema, (parsed_schema, named_schemas))
         return parsed_schema, named_schemas
 
 
@@ -354,7 +363,8 @@ class JSONDeserializer(BaseDeserializer):
         schema_registry_client (SchemaRegistryClient, optional): Schema Registry client instance. Needed if ``schema_str`` is a schema referencing other schemas or is not provided.
     """  # noqa: E501
 
-    __slots__ = ['_parsed_schema', '_named_schemas', '_from_dict', '_writer_schemas', '_schema']
+    __slots__ = ['_parsed_schema', '_named_schemas', '_from_dict', '_schema',
+                 '_parsed_schemas']
 
     _default_conf = {'use.latest.version': False,
                      'use.latest.with.metadata': None,
@@ -383,7 +393,7 @@ class JSONDeserializer(BaseDeserializer):
         self._schema = schema
         self._registry = schema_registry_client
         self._rule_registry = rule_registry
-        self._writer_schemas = {}
+        self._parsed_schemas = ParsedSchemaCache()
 
         conf_copy = self._default_conf.copy()
         if conf is not None:
@@ -454,11 +464,8 @@ class JSONDeserializer(BaseDeserializer):
             # JSON documents are self-describing; no need to query schema
             obj_dict = json.loads(payload.read())
 
-            writer_schema, writer_named_schemas = self._writer_schemas.get(schema_id, None)
-            if writer_schema is None:
-                registered_schema = self._registry.get_schema(schema_id)
-                writer_schema, writer_named_schemas = self._get_parsed_schema(registered_schema.schema)
-                self._writer_schemas[schema_id] = writer_schema, writer_named_schemas
+            writer_schema_raw = self._registry.get_schema(schema_id)
+            writer_schema, writer_named_schemas = self._get_parsed_schema(writer_schema_raw.schema)
 
             if subject is None:
                 subject = self._subject_name_func(ctx, writer_schema.get("title"))
@@ -466,10 +473,12 @@ class JSONDeserializer(BaseDeserializer):
                     latest_schema = self._get_reader_schema(subject)
 
             if latest_schema is not None:
-                migrations = self._get_migrations(subject, writer_schema, latest_schema, None)
+                migrations = self._get_migrations(subject, writer_schema_raw, latest_schema, None)
+                reader_schema_raw = latest_schema
                 reader_schema, reader_named_schemas = self._get_parsed_schema(latest_schema.schema)
             else:
-                reader_schema, reader_naeed_schemas = writer_schema, writer_named_schemas
+                reader_schema_raw = writer_schema_raw
+                reader_schema, reader_named_schemas = writer_schema, writer_named_schemas
 
             if len(migrations) > 0:
                 obj_dict = self._execute_migrations(ctx, subject, migrations, obj_dict)
@@ -477,20 +486,17 @@ class JSONDeserializer(BaseDeserializer):
             field_transformer = lambda rule_ctx, message, field_transform: (
                 transform(rule_ctx, reader_schema, reader_named_schemas, "$", message, field_transform))
             obj_dict = self._execute_rules(ctx, subject, RuleMode.READ, None,
-                                           reader_schema, obj_dict, None,
+                                           reader_schema_raw, obj_dict, None,
                                            field_transformer)
 
             try:
-                if self._parsed_schema is None:
-                    schema = self._registry.get_schema(schema_id)
-                    # TODO: cache the parsed schemas too?
-                    parsed_schema, named_schemas = self._get_parsed_schema(schema.schema)
+                if self._named_schemas:
+                    validate(instance=obj_dict, schema=self._parsed_schema,
+                             resolver=RefResolver(self._parsed_schema.get('$id'),
+                                                  self._parsed_schema,
+                                                  store=self._named_schemas))
                 else:
-                    parsed_schema, named_schemas = self._parsed_schema, self._named_schemas
-                validate(instance=obj_dict,
-                         schema=self._parsed_schema, resolver=RefResolver(parsed_schema.get('$id'),
-                                                                          parsed_schema,
-                                                                          store=named_schemas))
+                    validate(instance=obj_dict, schema=self._parsed_schema)
             except ValidationError as ve:
                 raise SerializationError(ve.message)
 
@@ -502,8 +508,15 @@ class JSONDeserializer(BaseDeserializer):
     def _get_parsed_schema(self, schema: Schema) -> Tuple[Optional[JsonSchema], Dict[str, JsonSchema]]:
         if schema is None:
             return None, {}
+
+        parsed_schema, named_schemas = self._parsed_schemas.get_parsed_schema(schema)
+        if parsed_schema is not None:
+            return parsed_schema, named_schemas
+
         named_schemas = _resolve_named_schema(schema, self._registry)
         parsed_schema = json.loads(schema.schema_str)
+
+        self._parsed_schemas.set(schema, (parsed_schema, named_schemas))
         return parsed_schema, named_schemas
 
 
