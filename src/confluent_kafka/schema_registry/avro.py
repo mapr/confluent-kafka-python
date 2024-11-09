@@ -19,7 +19,7 @@ import re
 from io import BytesIO
 from json import loads
 from struct import pack, unpack
-from typing import Dict, Any, List, Union, Optional, Set
+from typing import Dict, Union, Optional, Set, Callable
 
 from fastavro import (parse_schema,
                       schemaless_reader,
@@ -31,7 +31,9 @@ from . import (_MAGIC_BYTE,
                topic_subject_name_strategy,
                RuleMode,
                RuleKind, SchemaRegistryClient)
-from confluent_kafka.serialization import (SerializationError)
+from confluent_kafka.serialization import (SerializationError,
+                                           SerializationContext)
+from .rule_registry import RuleRegistry
 from .serde import BaseSerializer, BaseDeserializer, RuleContext, FieldType, \
     FieldTransform, RuleConditionError, ParsedSchemaCache
 
@@ -44,10 +46,10 @@ AvroMessage = Union[
     decimal.Decimal,  # 'fixed'
     bool,  # 'boolean'
     bytes,  # 'bytes'
-    List[Any],  # 'array'
-    Dict[Any, Any],  # 'map' and 'record'
+    list,  # 'array'
+    dict,  # 'map' and 'record'
 ]
-AvroSchema = Union[str, List[Any], Dict[Any, Any]]
+AvroSchema = Union[str, list, dict]
 
 
 class _ContextStringIO(BytesIO):
@@ -213,8 +215,12 @@ class AvroSerializer(BaseSerializer):
                      'use.latest.with.metadata': None,
                      'subject.name.strategy': topic_subject_name_strategy}
 
-    def __init__(self, schema_registry_client, schema_str=None,
-        to_dict=None, conf=None, rule_registry=None):
+    def __init__(self,
+        schema_registry_client: SchemaRegistryClient,
+        schema_str: str = None,
+        to_dict: Callable[[object, SerializationContext], dict] = None,
+        conf: dict = None,
+        rule_registry: RuleRegistry = None):
         super().__init__()
         if isinstance(schema_str, str):
             schema = _schema_loads(schema_str)
@@ -291,7 +297,7 @@ class AvroSerializer(BaseSerializer):
         self._schema_name = schema_name
         self._parsed_schema = parsed_schema
 
-    def __call__(self, obj, ctx=None):
+    def __call__(self, obj: object, ctx: SerializationContext = None) -> Optional[bytes]:
         """
         Serializes an object to Avro binary format, prepending it with Confluent
         Schema Registry framing.
@@ -416,8 +422,13 @@ class AvroDeserializer(BaseDeserializer):
                      'use.latest.with.metadata': None,
                      'subject.name.strategy': topic_subject_name_strategy}
 
-    def __init__(self, schema_registry_client, schema_str=None,
-        from_dict=None, return_record_name=False, conf=None, rule_registry=None):
+    def __init__(self,
+        schema_registry_client: SchemaRegistryClient,
+        schema_str: Union[str, Schema] = None,
+        from_dict: Callable[[dict, SerializationContext], object] = None,
+        return_record_name: bool = False,
+        conf: dict = None,
+        rule_registry: RuleRegistry = None):
         super().__init__()
         schema = None
         if schema_str is not None:
@@ -468,7 +479,7 @@ class AvroDeserializer(BaseDeserializer):
         if not isinstance(self._return_record_name, bool):
             raise ValueError("return_record_name must be a boolean value")
 
-    def __call__(self, data, ctx=None):
+    def __call__(self, data: bytes, ctx: SerializationContext = None) -> Optional[Union[dict, object]]:
         """
         Deserialize Avro binary encoded data with Confluent Schema Registry framing to
         a dict, or object instance according to from_dict, if specified.
@@ -596,7 +607,7 @@ def transform(ctx: RuleContext, schema: AvroSchema, message: AvroMessage,
     return message
 
 
-def _transform_field(ctx: RuleContext, schema: AvroSchema, field: Dict[str, Any],
+def _transform_field(ctx: RuleContext, schema: AvroSchema, field: dict,
     message: AvroMessage, field_transform: FieldTransform):
     type = field["type"]
     name = field["name"]

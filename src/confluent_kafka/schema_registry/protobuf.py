@@ -21,11 +21,12 @@ import base64
 import struct
 import warnings
 from collections import deque
-from typing import Set, Any, List, Union
+from typing import Set, List, Union, Dict, Optional, Any
 
 from google.protobuf import descriptor_pb2
 from google.protobuf import json_format
 from google.protobuf.descriptor_pool import DescriptorPool
+from google.protobuf.pyext.cpp_message import GeneratedProtocolMessageType
 
 import confluent_kafka.schema_registry.confluent.meta_pb2 as meta_pb2
 
@@ -37,6 +38,7 @@ from google.protobuf.message_factory import GetMessageClass
 from . import (_MAGIC_BYTE,
                reference_subject_name_strategy,
                topic_subject_name_strategy, SchemaRegistryClient)
+from .rule_registry import RuleRegistry
 from .schema_registry_client import (Schema,
                                      SchemaReference,
                                      RuleKind,
@@ -50,7 +52,7 @@ from .serde import BaseSerializer, BaseDeserializer, RuleContext, \
 # Python3.chr() -> Unicode
 # Python2.chr() -> str(alias for bytes)
 if sys.version > '3':
-    def _bytes(v):
+    def _bytes(v: int) -> bytes:
         """
         Convert int to bytes
 
@@ -59,7 +61,7 @@ if sys.version > '3':
         """
         return bytes((v,))
 else:
-    def _bytes(v):
+    def _bytes(v: int) -> str:
         """
         Convert int to bytes
 
@@ -309,7 +311,11 @@ class ProtobufSerializer(BaseSerializer):
         'use.deprecated.format': False,
     }
 
-    def __init__(self, msg_type, schema_registry_client, conf=None, rule_registry=None):
+    def __init__(self,
+        msg_type: GeneratedProtocolMessageType,
+        schema_registry_client: SchemaRegistryClient,
+        conf: dict = None,
+        rule_registry: RuleRegistry = None):
         super().__init__()
 
         if conf is None or 'use.deprecated.format' not in conf:
@@ -385,7 +391,7 @@ class ProtobufSerializer(BaseSerializer):
                               schema_type='PROTOBUF')
 
     @staticmethod
-    def _write_varint(buf, val: int, zigzag=True):
+    def _write_varint(buf: io.BytesIO, val: int, zigzag: bool = True):
         """
         Writes val to buf, either using zigzag or uvarint encoding.
 
@@ -404,7 +410,7 @@ class ProtobufSerializer(BaseSerializer):
         buf.write(_bytes(val))
 
     @staticmethod
-    def _encode_varints(buf, ints, zigzag=True):
+    def _encode_varints(buf: io.BytesIO, ints: List[int], zigzag: bool = True):
         """
         Encodes each int as a uvarint onto buf
 
@@ -455,7 +461,7 @@ class ProtobufSerializer(BaseSerializer):
                                                reference.version))
         return schema_refs
 
-    def __call__(self, message, ctx=None):
+    def __call__(self, message: Message, ctx: SerializationContext = None) -> Optional[bytes]:
         """
         Serializes an instance of a class derived from Protobuf Message, and prepends
         it with Confluent Schema Registry framing.
@@ -483,7 +489,7 @@ class ProtobufSerializer(BaseSerializer):
 
         subject = self._subject_name_func(ctx,
                                           message.DESCRIPTOR.full_name)
-        latest_schema = self._get_reader_schema(subject)
+        latest_schema = self._get_reader_schema(subject, format='serialized')
         if latest_schema is not None:
             self._schema_id = latest_schema.schema_id
         elif subject not in self._known_subjects:
@@ -574,7 +580,11 @@ class ProtobufDeserializer(BaseDeserializer):
         'use.deprecated.format': False,
     }
 
-    def __init__(self, message_type, conf=None, schema_registry_client=None, rule_registry=None):
+    def __init__(self,
+        message_type: Message,
+        conf: dict = None,
+        schema_registry_client: SchemaRegistryClient = None,
+        rule_registry: RuleRegistry = None):
         super().__init__()
 
         self._registry = schema_registry_client
@@ -626,7 +636,7 @@ class ProtobufDeserializer(BaseDeserializer):
         self._msg_class = GetMessageClass(descriptor)
 
     @staticmethod
-    def _decode_varint(buf, zigzag=True):
+    def _decode_varint(buf: io.BytesIO, zigzag: bool = True) -> int:
         """
         Decodes a single varint from a buffer.
 
@@ -661,7 +671,7 @@ class ProtobufDeserializer(BaseDeserializer):
             raise EOFError("Unexpected EOF while reading index")
 
     @staticmethod
-    def _read_byte(buf):
+    def _read_byte(buf: io.BytesIO) -> int:
         """
         Read one byte from buf as an int.
 
@@ -678,7 +688,7 @@ class ProtobufDeserializer(BaseDeserializer):
         return ord(i)
 
     @staticmethod
-    def _read_index_array(buf, zigzag=True):
+    def _read_index_array(buf: io.BytesIO, zigzag: bool = True) -> List[int]:
         """
         Read an index array from buf that specifies the message
         descriptor of interest in the file descriptor.
@@ -704,7 +714,7 @@ class ProtobufDeserializer(BaseDeserializer):
 
         return msg_index
 
-    def __call__(self, data, ctx=None):
+    def __call__(self, data: bytes, ctx: SerializationContext = None) -> Optional[Message]:
         """
         Deserialize a serialized protobuf message with Confluent Schema Registry
         framing.
@@ -737,7 +747,7 @@ class ProtobufDeserializer(BaseDeserializer):
         subject = self._subject_name_func(ctx, None)
         latest_schema = None
         if subject is not None:
-            latest_schema = self._get_reader_schema(subject)
+            latest_schema = self._get_reader_schema(subject, format='serialized')
 
         with _ContextStringIO(data) as payload:
             magic, schema_id = struct.unpack('>bI', payload.read(5))
@@ -748,14 +758,14 @@ class ProtobufDeserializer(BaseDeserializer):
 
             msg_index = self._read_index_array(payload, zigzag=not self._use_deprecated_format)
 
-            writer_schema_raw = self._registry.get_schema(schema_id)
+            writer_schema_raw = self._registry.get_schema(schema_id, format='serialized')
             writer_schema = self._get_parsed_schema(writer_schema_raw.schema)
             writer_desc = self._get_message_desc(writer_schema, msg_index)
 
             if subject is None:
                 subject = self._subject_name_func(ctx, writer_desc.full_name)
                 if subject is not None:
-                    latest_schema = self._get_reader_schema(subject)
+                    latest_schema = self._get_reader_schema(subject, format='serialized')
 
             if latest_schema is not None:
                 migrations = self._get_migrations(subject, writer_schema_raw, latest_schema, None)

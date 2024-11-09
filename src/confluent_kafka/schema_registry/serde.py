@@ -256,13 +256,13 @@ class BaseSerde(object):
                  '_registry', '_rule_registry', '_subject_name_func',
                  '_field_transformer']
 
-    def _get_reader_schema(self, subject: str) -> RegisteredSchema:
+    def _get_reader_schema(self, subject: str, format: str = None) -> RegisteredSchema:
         latest_schema = None
         if self._use_latest_with_metadata is not None:
             latest_schema = self._registry.get_latest_version_with_metadata(
-                subject, self._use_latest_with_metadata)
+                subject, self._use_latest_with_metadata, format)
         if self._use_latest_version:
-            latest_schema = self._registry.get_latest_version(subject)
+            latest_schema = self._registry.get_latest_version(subject, format)
         return latest_schema
 
     def _execute_rules(self, ser_ctx: SerializationContext, subject: str,
@@ -459,7 +459,7 @@ class ParsedSchemaCache(object):
         Args:
             schema (Schema): The schema
 
-            parsed_schema (Any): The parsed schema
+            parsed_schema (object): The parsed schema
         """
 
         with self.lock:

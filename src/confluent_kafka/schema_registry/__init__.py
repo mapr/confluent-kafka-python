@@ -29,7 +29,6 @@ from .schema_registry_client import (Metadata,
                                      SchemaRegistryClient,
                                      SchemaRegistryError,
                                      SchemaReference)
-from ..serialization import SerializationContext
 
 _MAGIC_BYTE = 0
 
@@ -50,7 +49,7 @@ __all__ = ["Metadata",
            "record_subject_name_strategy"]
 
 
-def topic_subject_name_strategy(ctx: SerializationContext,
+def topic_subject_name_strategy(ctx: 'SerializationContext',
     record_name: Optional[str]) -> Optional[str]:
     """
     Constructs a subject name in the form of {topic}-key|value.
@@ -65,7 +64,7 @@ def topic_subject_name_strategy(ctx: SerializationContext,
     return ctx.topic + "-" + ctx.field
 
 
-def topic_record_subject_name_strategy(ctx: SerializationContext,
+def topic_record_subject_name_strategy(ctx: 'SerializationContext',
     record_name: Optional[str]) -> Optional[str]:
     """
     Constructs a subject name in the form of {topic}-{record_name}.
@@ -80,7 +79,7 @@ def topic_record_subject_name_strategy(ctx: SerializationContext,
     return ctx.topic + "-" + record_name if record_name is not None else None
 
 
-def record_subject_name_strategy(ctx: SerializationContext,
+def record_subject_name_strategy(ctx: 'SerializationContext',
     record_name: Optional[str]) -> Optional[str]:
     """
     Constructs a subject name in the form of {record_name}.
@@ -95,7 +94,7 @@ def record_subject_name_strategy(ctx: SerializationContext,
     return record_name if record_name is not None else None
 
 
-def reference_subject_name_strategy(ctx: SerializationContext,
+def reference_subject_name_strategy(ctx: 'SerializationContext',
     schema_ref: SchemaReference) -> Optional[str]:
     """
     Constructs a subject reference name in the form of {reference name}.

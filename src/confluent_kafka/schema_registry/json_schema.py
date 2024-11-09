@@ -19,7 +19,7 @@ from io import BytesIO
 
 import json
 import struct
-from typing import Any, Dict, Union, Optional, List, Set, Tuple
+from typing import Dict, Union, Optional, List, Set, Tuple, Callable
 
 from jsonschema import validate, ValidationError, RefResolver
 
@@ -28,10 +28,12 @@ from confluent_kafka.schema_registry import (_MAGIC_BYTE,
                                              topic_subject_name_strategy,
                                              RuleKind,
                                              RuleMode, SchemaRegistryClient)
+from confluent_kafka.schema_registry.rule_registry import RuleRegistry
 from confluent_kafka.schema_registry.serde import BaseSerializer, \
     BaseDeserializer, RuleContext, FieldTransform, FieldType, \
     RuleConditionError, ParsedSchemaCache
-from confluent_kafka.serialization import (SerializationError)
+from confluent_kafka.serialization import (SerializationError,
+                                           SerializationContext)
 
 
 JsonMessage = Union[
@@ -41,10 +43,10 @@ JsonMessage = Union[
     int,  # 'int' and 'long'
     decimal.Decimal,  # 'fixed'
     bool,  # 'boolean'
-    List[Any],  # 'array'
-    Dict[Any, Any],  # 'map' and 'record'
+    list,  # 'array'
+    dict,  # 'map' and 'record'
 ]
-JsonSchema = Union[bool, Dict[Any, Any]]
+JsonSchema = Union[bool, dict]
 
 
 class _ContextStringIO(BytesIO):
@@ -191,8 +193,12 @@ class JSONSerializer(BaseSerializer):
                      'use.latest.with.metadata': None,
                      'subject.name.strategy': topic_subject_name_strategy}
 
-    def __init__(self, schema_str, schema_registry_client,
-        to_dict=None, conf=None, rule_registry=None):
+    def __init__(self,
+        schema_str: str,
+        schema_registry_client: SchemaRegistryClient,
+        to_dict: Callable[[object, SerializationContext], dict] = None,
+        conf: dict = None,
+        rule_registry: RuleRegistry = None):
         super().__init__()
         if isinstance(schema_str, str):
             self._schema = Schema(schema_str, schema_type="JSON")
@@ -252,7 +258,7 @@ class JSONSerializer(BaseSerializer):
         self._parsed_schema = schema_dict
         self._named_schemas = named_schemas
 
-    def __call__(self, obj, ctx=None):
+    def __call__(self, obj: object, ctx: SerializationContext = None) -> Optional[bytes]:
         """
         Serializes an object to JSON, prepending it with Confluent Schema Registry
         framing.
@@ -370,8 +376,12 @@ class JSONDeserializer(BaseDeserializer):
                      'use.latest.with.metadata': None,
                      'subject.name.strategy': topic_subject_name_strategy}
 
-    def __init__(self, schema_str, from_dict=None, schema_registry_client=None,
-        conf=None, rule_registry=None):
+    def __init__(self,
+        schema_str: str,
+        from_dict: Callable[[dict, SerializationContext], object] = None,
+        schema_registry_client: SchemaRegistryClient  =None,
+        conf: dict = None,
+        rule_registry: RuleRegistry = None):
         super().__init__()
         if isinstance(schema_str, str):
             schema = Schema(schema_str, schema_type="JSON")
@@ -422,7 +432,7 @@ class JSONDeserializer(BaseDeserializer):
 
         self._from_dict = from_dict
 
-    def __call__(self, data, ctx=None):
+    def __call__(self, data: bytes, ctx: SerializationContext = None) -> Optional[Union[dict, object]]:
         """
         Deserialize a JSON encoded record with Confluent Schema Registry framing to
         a dict, or object instance according to from_dict if from_dict is specified.
