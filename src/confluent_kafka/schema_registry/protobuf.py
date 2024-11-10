@@ -493,8 +493,13 @@ class ProtobufSerializer(BaseSerializer):
         if latest_schema is not None:
             self._schema_id = latest_schema.schema_id
         elif subject not in self._known_subjects:
-            self._schema.references = self._resolve_dependencies(
+            references = self._resolve_dependencies(
                 ctx, message.DESCRIPTOR.file)
+            self._schema = Schema(
+                self._schema.schema_str,
+                self._schema.schema_type,
+                references
+            )
 
             if self._auto_register:
                 self._schema_id = self._registry.register_schema(subject,

@@ -511,19 +511,8 @@ class SchemaRegistryClient(object):
             else:
                 query = {'format': fmt}
         response = self._rest_client.get('schemas/ids/{}'.format(schema_id), query)
-        schema = Schema(schema_str=response['schema'],
-                        schema_type=response.get('schemaType', 'AVRO'))
 
-        schema.references = [
-            SchemaReference(name=ref['name'], subject=ref['subject'], version=ref['version'])
-            for ref in response.get('references', [])
-        ]
-        metadata: Optional[Dict[str, Any]] = response.get("metadata")
-        if metadata is not None:
-            schema.metadata = Metadata.from_dict(metadata)
-        rule_set: Optional[Dict[str, Any]] = response.get("ruleSet")
-        if rule_set is not None:
-            schema.rule_set = RuleSet.from_dict(rule_set)
+        schema = Schema.from_dict(response)
 
         self._cache.set(schema_id, schema)
 
@@ -569,29 +558,7 @@ class SchemaRegistryClient(object):
                                           .format(_urlencode(subject_name), normalize_schemas),
                                           body=request)
 
-        schema_type = response.get('schemaType', 'AVRO')
-        registered_schema = RegisteredSchema(
-            schema_id=response['id'],
-            schema=Schema(
-                response['schema'],
-                schema_type,
-                [
-                    SchemaReference(
-                        name=ref['name'],
-                        subject=ref['subject'],
-                        version=ref['version']
-                    ) for ref in response.get('references', [])
-                ]
-            ),
-            subject=response['subject'],
-            version=response['version']
-        )
-        metadata: Optional[Dict[str, Any]] = response.get("metadata")
-        if metadata is not None:
-            registered_schema.schema.metadata = Metadata.from_dict(metadata)
-        rule_set: Optional[Dict[str, Any]] = response.get("ruleSet")
-        if rule_set is not None:
-            registered_schema.schema.rule_set = RuleSet.from_dict(rule_set)
+        registered_schema = RegisteredSchema.from_dict(response)
 
         self._metadata_cache.set(subject_name, schema, None, registered_schema)
 
@@ -674,30 +641,10 @@ class SchemaRegistryClient(object):
                                          .format(_urlencode(subject_name),
                                                  'latest'), query)
 
-        schema_type = response.get('schemaType', 'AVRO')
-        registered_schema = RegisteredSchema(
-            schema_id=response['id'],
-            schema=Schema(
-                response['schema'],
-                schema_type,
-                [
-                    SchemaReference(
-                        name=ref['name'],
-                        subject=ref['subject'],
-                        version=ref['version']
-                    ) for ref in response.get('references', [])
-                ]
-            ),
-            subject=response['subject'],
-            version=response['version']
-        )
-        metadata: Optional[Dict[str, Any]] = response.get("metadata")
-        if metadata is not None:
-            registered_schema.schema.metadata = Metadata.from_dict(metadata)
-        rule_set: Optional[Dict[str, Any]] = response.get("ruleSet")
-        if rule_set is not None:
-            registered_schema.schema.rule_set = RuleSet.from_dict(rule_set)
+        registered_schema = RegisteredSchema.from_dict(response)
+
         self._latest_version_cache[subject_name] = registered_schema
+
         return registered_schema
 
     def get_latest_with_metadata(self, subject_name: str, metadata: Dict[str, str],
@@ -728,30 +675,10 @@ class SchemaRegistryClient(object):
                                          .format(_urlencode(subject_name),
                                                  'latest'), query)
 
-        schema_type = response.get('schemaType', 'AVRO')
-        registered_schema = RegisteredSchema(
-            schema_id=response['id'],
-            schema=Schema(
-                response['schema'],
-                schema_type,
-                [
-                    SchemaReference(
-                        name=ref['name'],
-                        subject=ref['subject'],
-                        version=ref['version']
-                    ) for ref in response.get('references', [])
-                ]
-            ),
-            subject=response['subject'],
-            version=response['version']
-        )
-        metadata: Optional[Dict[str, Any]] = response.get("metadata")
-        if metadata is not None:
-            registered_schema.schema.metadata = Metadata.from_dict(metadata)
-        rule_set: Optional[Dict[str, Any]] = response.get("ruleSet")
-        if rule_set is not None:
-            registered_schema.schema.rule_set = RuleSet.from_dict(rule_set)
+        registered_schema = RegisteredSchema.from_dict(response)
+
         self._latest_with_metadata_cache[cache_key] = registered_schema
+
         return registered_schema
 
     def get_version(self, subject_name: str, version: int,
@@ -787,29 +714,8 @@ class SchemaRegistryClient(object):
                                          .format(_urlencode(subject_name),
                                                  version), query)
 
-        schema_type = response.get('schemaType', 'AVRO')
-        registered_schema = RegisteredSchema(
-            schema_id=response['id'],
-            schema=Schema(
-                response['schema'],
-                schema_type,
-                [
-                    SchemaReference(
-                        name=ref['name'],
-                        subject=ref['subject'],
-                        version=ref['version']
-                    ) for ref in response.get('references', [])
-                ]
-            ),
-            subject=response['subject'],
-            version=response['version']
-        )
-        metadata: Optional[Dict[str, Any]] = response.get("metadata")
-        if metadata is not None:
-            registered_schema.schema.metadata = Metadata.from_dict(metadata)
-        rule_set: Optional[Dict[str, Any]] = response.get("ruleSet")
-        if rule_set is not None:
-            registered_schema.schema.rule_set = RuleSet.from_dict(rule_set)
+        registered_schema = RegisteredSchema.from_dict(response)
+
         self._metadata_cache.set(subject_name, None, version, registered_schema)
 
         return registered_schema
@@ -987,7 +893,7 @@ class RuleMode(str, Enum):
         return str(self.value)
 
 
-@_attrs_define
+@_attrs_define(eq=True)
 class RuleParams:
     params: Dict[str, str] = _attrs_field(init=False, factory=dict)
 
@@ -1000,17 +906,16 @@ class RuleParams:
     @classmethod
     def from_dict(cls: Type[T], src_dict: Dict[str, Any]) -> T:
         d = src_dict.copy()
-        rule_params = cls()
 
-        rule_params.params = d
+        rule_params = cls(params=d)
+
         return rule_params
 
-    @property
-    def additional_keys(self) -> List[str]:
-        return list(self.params.keys())
+    def __hash__(self):
+        return hash(frozenset(self.params.items()))
 
 
-@_attrs_define
+@_attrs_define(eq=True)
 class Rule:
     name: Optional[str]
     doc: Optional[str]
@@ -1037,7 +942,7 @@ class Rule:
         if self.mode is not None:
             mode = self.mode.value
 
-        type = self.type
+        rule_type = self.type
 
         tags = self.tags
 
@@ -1064,7 +969,7 @@ class Rule:
         if mode is not None:
             field_dict["mode"] = mode
         if type is not None:
-            field_dict["type"] = type
+            field_dict["type"] = rule_type
         if tags is not None:
             field_dict["tags"] = tags
         if params is not None:
@@ -1082,7 +987,6 @@ class Rule:
 
     @classmethod
     def from_dict(cls: Type[T], src_dict: Dict[str, Any]) -> T:
-
         d = src_dict.copy()
         name = d.pop("name", None)
 
@@ -1098,7 +1002,7 @@ class Rule:
         if _mode is not None:
             mode = RuleMode(_mode)
 
-        type = d.pop("type", None)
+        rule_type = d.pop("type", None)
 
         tags = cast(List[str], d.pop("tags", None))
 
@@ -1120,7 +1024,7 @@ class Rule:
             doc=doc,
             kind=kind,
             mode=mode,
-            type=type,
+            type=rule_type,
             tags=tags,
             params=params,
             expr=expr,
@@ -1131,8 +1035,13 @@ class Rule:
 
         return rule
 
+    def __hash__(self):
+        return hash((self.name, self.kind, self.mode, self.type,
+                     frozenset(self.tags), self.params, self.expr,
+                     self.on_success, self.on_failure, self.disabled))
 
-@_attrs_define
+
+@_attrs_define(eq=True)
 class RuleSet:
     migration_rules: Optional[List["Rule"]]
     domain_rules: Optional[List["Rule"]]
@@ -1163,7 +1072,6 @@ class RuleSet:
 
     @classmethod
     def from_dict(cls: Type[T], src_dict: Dict[str, Any]) -> T:
-
         d = src_dict.copy()
         migration_rules = []
         _migration_rules = d.pop("migrationRules", None)
@@ -1184,8 +1092,11 @@ class RuleSet:
 
         return rule_set
 
+    def __hash__(self):
+        return hash((frozenset(self.migration_rules), frozenset(self.domain_rules)))
 
-@_attrs_define
+
+@_attrs_define(eq=True)
 class MetadataTags:
     tags: Dict[str, List[str]] = _attrs_field(init=False, factory=dict)
 
@@ -1199,7 +1110,6 @@ class MetadataTags:
     @classmethod
     def from_dict(cls: Type[T], src_dict: Dict[str, Any]) -> T:
         d = src_dict.copy()
-        metadata_tags = cls()
 
         tags = {}
         for prop_name, prop_dict in d.items():
@@ -1207,11 +1117,15 @@ class MetadataTags:
 
             tags[prop_name] = tag
 
-        metadata_tags.tags = tags
+        metadata_tags = cls(tags=tags)
+
         return metadata_tags
 
+    def __hash__(self):
+        return hash(frozenset(self.tags.items()))
 
-@_attrs_define
+
+@_attrs_define(eq=True)
 class MetadataProperties:
     properties: Dict[str, str] = _attrs_field(init=False, factory=dict)
 
@@ -1224,13 +1138,16 @@ class MetadataProperties:
     @classmethod
     def from_dict(cls: Type[T], src_dict: Dict[str, Any]) -> T:
         d = src_dict.copy()
-        metadata_properties = cls()
 
-        metadata_properties.properties = d
+        metadata_properties = cls(properties=d)
+
         return metadata_properties
 
+    def __hash__(self):
+        return hash(frozenset(self.properties.items()))
 
-@_attrs_define
+
+@_attrs_define(eq=True)
 class Metadata:
     tags: Optional[MetadataTags]
     properties: Optional[MetadataProperties]
@@ -1263,7 +1180,6 @@ class Metadata:
 
     @classmethod
     def from_dict(cls: Type[T], src_dict: Dict[str, Any]) -> T:
-
         d = src_dict.copy()
         _tags: Optional[Dict[str, Any]] = d.pop("tags", None)
         tags: Optional[MetadataTags] = None
@@ -1288,106 +1204,206 @@ class Metadata:
 
         return metadata
 
+    def __hash__(self):
+        return hash((self.tags, self.properties, frozenset(self.sensitive)))
 
-class SchemaReference(object):
-    """
-    Reference to a Schema registered with the Schema Registry.
 
-    As of Confluent Platform 5.5 Schema's may now hold references to other
-    registered schemas. As long as there is a references to a schema it may not
-    be deleted.
+@_attrs_define(eq=True)
+class SchemaReference:
+    name: Optional[str]
+    subject: Optional[str]
+    version: Optional[int]
 
-    Args:
-        name (str): Schema name
+    def to_dict(self) -> Dict[str, Any]:
+        name = self.name
 
-        subject (str): Subject this Schema is registered with
+        subject = self.subject
 
-        version (int): This Schema's version
-    """
+        version = self.version
 
-    def __init__(self, name: str, subject: str, version: int):
-        self.name = name
-        self.subject = subject
-        self.version = version
+        field_dict: Dict[str, Any] = {}
+        if name is not None:
+            field_dict["name"] = name
+        if subject is not None:
+            field_dict["subject"] = subject
+        if version is not None:
+            field_dict["version"] = version
 
-    def __eq__(self, other):
-        if not isinstance(other, SchemaReference):
-            return False
-        return (self.name == other.name
-                and self.subject == other.subject
-                and self.version == other.version)
+        return field_dict
+
+    @classmethod
+    def from_dict(cls: Type[T], src_dict: Dict[str, Any]) -> T:
+        d = src_dict.copy()
+        name = d.pop("name", None)
+
+        subject = d.pop("subject", None)
+
+        version = d.pop("version", None)
+
+        schema_reference = cls(
+            name=name,
+            subject=subject,
+            version=version,
+        )
+
+        return schema_reference
 
     def __hash__(self):
         return hash((self.name, self.subject, self.version))
 
 
-class Schema(object):
+@_attrs_define(eq=True)
+class Schema:
     """
-    An unregistered Schema.
-
-    Args:
-        schema_str (str): String representation of the schema.
-
-        schema_type (str): The schema type: AVRO, PROTOBUF or JSON.
-
-        references ([SchemaReference]): SchemaReferences used in this schema.
+    An unregistered schema.
     """
-    __slots__ = ['schema_str', 'schema_type', 'references', 'metadata', 'rule_set', '_hash']
 
-    def __init__(self, schema_str: str, schema_type: str, references: List[SchemaReference] = None,
-        metadata: Metadata = None, rule_set: RuleSet = None):
-        self.schema_str = schema_str
-        self.schema_type = schema_type
-        self.references = references or []
-        self.metadata = metadata
-        self.rule_set = rule_set
-        self._hash = hash(schema_str)
+    schema_str: Optional[str]
+    schema_type: Optional[str] = "AVRO"
+    references: Optional[List[SchemaReference]] = []
+    metadata: Optional[Metadata] = None
+    rule_set: Optional[RuleSet] = None
 
-    def __eq__(self, other):
-        if not isinstance(other, Schema):
-            return False
-        return (self.schema_str == other.schema_str
-                and self.schema_type == other.schema_type
-                and self.references == other.references
-                and self.metadata == other.metadata
-                and self.rule_set == other.rule_set)
+    def to_dict(self) -> Dict[str, Any]:
+        schema = self.schema_str
+
+        schema_type = self.schema_type
+
+        references: Optional[List[Dict[str, Any]]] = []
+        if self.references is not None:
+            for references_item_data in self.references:
+                references_item = references_item_data.to_dict()
+                references.append(references_item)
+
+        metadata: Optional[Dict[str, Any]]
+        if self.metadata is None:
+            metadata = None
+        elif isinstance(self.metadata, Metadata):
+            metadata = self.metadata.to_dict()
+        else:
+            metadata = self.metadata
+
+        rule_set: Optional[Dict[str, Any]]
+        if self.rule_set is None:
+            rule_set = None
+        elif isinstance(self.rule_set, RuleSet):
+            rule_set = self.rule_set.to_dict()
+        else:
+            rule_set = self.rule_set
+
+        field_dict: Dict[str, Any] = {}
+        if schema is not None:
+            field_dict["schema"] = schema
+        if schema_type is not None:
+            field_dict["schemaType"] = schema_type
+        if references is not None:
+            field_dict["references"] = references
+        if metadata is not None:
+            field_dict["metadata"] = metadata
+        if rule_set is not None:
+            field_dict["ruleSet"] = rule_set
+
+        return field_dict
+
+    @classmethod
+    def from_dict(cls: Type[T], src_dict: Dict[str, Any]) -> T:
+        d = src_dict.copy()
+
+        schema = d.pop("schema", None)
+
+        schema_type = d.pop("schemaType", "AVRO")
+
+        references = []
+        _references = d.pop("references", None)
+        for references_item_data in _references or []:
+            references_item = SchemaReference.from_dict(references_item_data)
+
+            references.append(references_item)
+
+        def _parse_metadata(data: object) -> Optional[Metadata]:
+            if data is None:
+                return data
+            if not isinstance(data, dict):
+                raise TypeError()
+            return Metadata.from_dict(data)
+
+        metadata = _parse_metadata(d.pop("metadata", None))
+
+        def _parse_rule_set(data: object) -> Optional[RuleSet]:
+            if data is None:
+                return data
+            if not isinstance(data, dict):
+                raise TypeError()
+            return RuleSet.from_dict(data)
+
+        rule_set = _parse_rule_set(d.pop("ruleSet", None))
+
+        schema = cls(
+            schema_str=schema,
+            schema_type=schema_type,
+            references=references,
+            metadata=metadata,
+            rule_set=rule_set,
+        )
+
+        return schema
 
     def __hash__(self):
-        return self._hash
+        return hash(self.schema_str)
 
 
-class RegisteredSchema(object):
+@_attrs_define(eq=True)
+class RegisteredSchema:
     """
-    Schema registration information.
-
-    Represents a  Schema registered with a subject. Use this class when you need
-    a specific version of a subject such as forming a SchemaReference.
-
-    Args:
-        schema_id (int): Registered Schema id
-
-        schema (Schema): Registered Schema
-
-        subject (str): Subject this schema is registered under
-
-        version (int): Version of this subject this schema is registered to
+    An registered schema.
     """
 
-    def __init__(self, schema_id: int, schema: Schema, subject: str, version: int):
-        self.schema_id = schema_id
-        self.schema = schema
-        self.subject = subject
-        self.version = version
+    schema_id: Optional[int]
+    schema: Optional[Schema]
+    subject: Optional[str]
+    version: Optional[int]
 
-    def __eq__(self, other):
-        if not isinstance(other, RegisteredSchema):
-            return False
-        return (self.schema_id == other.schema_id
-                and self.schema == other.schema
-                and self.subject == other.subject
-                and self.version == other.version)
+    def to_dict(self) -> Dict[str, Any]:
+        schema = self.schema
+
+        schema_id = self.schema_id
+
+        subject = self.subject
+
+        version = self.version
+
+        field_dict: Dict[str, Any] = {}
+        if schema is not None:
+            field_dict = schema.to_dict()
+        if schema_id is not None:
+            field_dict["id"] = schema_id
+        if subject is not None:
+            field_dict["subject"] = subject
+        if version is not None:
+            field_dict["version"] = version
+
+        return field_dict
+
+    @classmethod
+    def from_dict(cls: Type[T], src_dict: Dict[str, Any]) -> T:
+        d = src_dict.copy()
+
+        schema = Schema.from_dict(d)
+
+        schema_id = d.pop("id", None)
+
+        subject = d.pop("subject", None)
+
+        version = d.pop("version", None)
+
+        schema = cls(
+            schema_id=schema_id,
+            schema = schema,
+            subject=subject,
+            version=version,
+        )
+
+        return schema
 
     def __hash__(self):
         return hash((self.schema_id, self.schema, self.subject, self.version))
-
-

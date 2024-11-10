@@ -99,7 +99,6 @@ class Kek:
 
     @classmethod
     def from_dict(cls: Type[T], src_dict: Dict[str, Any]) -> T:
-
         d = src_dict.copy()
         name = d.pop("name", None)
 
@@ -178,7 +177,6 @@ class CreateKekRequest:
 
     @classmethod
     def from_dict(cls: Type[T], src_dict: Dict[str, Any]) -> T:
-
         d = src_dict.copy()
         name = d.pop("name", None)
 
@@ -362,44 +360,19 @@ class CreateDekRequest:
         return create_dek_request
 
 
-class KekId(object):
-    __slots__ = ['name', 'deleted']
-
-    def __init__(self, name: str, deleted: bool):
-        self.name = name
-        self.deleted =  deleted
-
-    def __eq__(self, other):
-        if not isinstance(other, KekId):
-            return False
-        return self.name == other.name and self.deleted == other.deleted
-
-    def __hash__(self):
-        return hash((self.name, self.deleted))
+@_attrs_define(eq=True, frozen=True)
+class KekId:
+    name: str
+    deleted: bool
 
 
-class DekId(object):
-    __slots__ = ['kek_name', 'subject', 'version', 'algorithm', 'deleted']
-
-    def __init__(self, kek_name: str, subject: str, version: int,
-        algorithm: DekAlgorithm, deleted: bool):
-        self.kek_name = kek_name
-        self.subject = subject
-        self.version = version
-        self.algorithm = algorithm
-        self.deleted = deleted
-
-    def __eq__(self, other):
-        if not isinstance(other, DekId):
-            return False
-        return (self.kek_name == other.kek_name
-                and self.subject == other.subject
-                and self.version == other.version
-                and self.algorithm == other.algorithm
-                and self.deleted == other.deleted)
-
-    def __hash__(self):
-        return hash((self.kek_name, self.subject, self.version, self.algorithm, self.deleted))
+@_attrs_define(eq=True, frozen=True)
+class DekId:
+    kek_name: str
+    subject: str
+    version: int
+    algorithm: DekAlgorithm
+    deleted: bool
 
 
 class _KekCache(object):

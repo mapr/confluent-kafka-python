@@ -217,7 +217,7 @@ class AvroSerializer(BaseSerializer):
 
     def __init__(self,
         schema_registry_client: SchemaRegistryClient,
-        schema_str: str = None,
+        schema_str: Union[str, Schema, None] = None,
         to_dict: Callable[[object, SerializationContext], dict] = None,
         conf: dict = None,
         rule_registry: RuleRegistry = None):
@@ -479,7 +479,7 @@ class AvroDeserializer(BaseDeserializer):
         if not isinstance(self._return_record_name, bool):
             raise ValueError("return_record_name must be a boolean value")
 
-    def __call__(self, data: bytes, ctx: SerializationContext = None) -> Optional[Union[dict, object]]:
+    def __call__(self, data: bytes, ctx: SerializationContext = None) -> Union[dict, object, None]:
         """
         Deserialize Avro binary encoded data with Confluent Schema Registry framing to
         a dict, or object instance according to from_dict, if specified.

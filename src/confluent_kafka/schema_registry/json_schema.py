@@ -194,7 +194,7 @@ class JSONSerializer(BaseSerializer):
                      'subject.name.strategy': topic_subject_name_strategy}
 
     def __init__(self,
-        schema_str: str,
+        schema_str: Union[str, Schema],
         schema_registry_client: SchemaRegistryClient,
         to_dict: Callable[[object, SerializationContext], dict] = None,
         conf: dict = None,
@@ -377,7 +377,7 @@ class JSONDeserializer(BaseDeserializer):
                      'subject.name.strategy': topic_subject_name_strategy}
 
     def __init__(self,
-        schema_str: str,
+        schema_str: Union[str, Schema],
         from_dict: Callable[[dict, SerializationContext], object] = None,
         schema_registry_client: SchemaRegistryClient  =None,
         conf: dict = None,
@@ -387,7 +387,7 @@ class JSONDeserializer(BaseDeserializer):
             schema = Schema(schema_str, schema_type="JSON")
         elif isinstance(schema_str, Schema):
             schema = schema_str
-            if bool(schema_str.references) and schema_registry_client is None:
+            if bool(schema.references) and schema_registry_client is None:
                 raise ValueError(
                     """schema_registry_client must be provided if "schema_str" is a Schema instance with references""")
         elif schema_str is None:
@@ -432,7 +432,7 @@ class JSONDeserializer(BaseDeserializer):
 
         self._from_dict = from_dict
 
-    def __call__(self, data: bytes, ctx: SerializationContext = None) -> Optional[Union[dict, object]]:
+    def __call__(self, data: bytes, ctx: SerializationContext = None) -> Union[dict, object, None]:
         """
         Deserialize a JSON encoded record with Confluent Schema Registry framing to
         a dict, or object instance according to from_dict if from_dict is specified.

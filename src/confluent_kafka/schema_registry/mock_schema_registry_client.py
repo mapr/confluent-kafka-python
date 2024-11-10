@@ -35,10 +35,15 @@ class _SchemaStore(object):
     def set(self, registered_schema: RegisteredSchema) -> int:
         with self.lock:
             self.max_id += 1
-            registered_schema.schema_id = self.max_id
-            self.schema_id_index[registered_schema.schema_id] = registered_schema
-            self.schema_index[registered_schema.schema] = registered_schema.schema_id
-            self.subject_schemas[registered_schema.subject].add(registered_schema)
+            rs = RegisteredSchema(
+                schema_id=self.max_id,
+                schema=registered_schema.schema,
+                subject=registered_schema.subject,
+                version=registered_schema.version
+            )
+            self.schema_id_index[rs.schema_id] = rs
+            self.schema_index[rs.schema] = rs.schema_id
+            self.subject_schemas[rs.subject].add(rs)
             return self.max_id
 
     def get_schema(self, schema_id: int) -> Optional[Schema]:
