@@ -156,8 +156,7 @@ FieldTransformer = Callable[[RuleContext, FieldTransform, Any], Any]
 
 
 class RuleBase(object):
-    # TODO RAY type hints
-    def configure(self, client_conf, conf):
+    def configure(self, client_conf: dict, rule_conf: dict):
         pass
 
     def type(self) -> str:
@@ -169,12 +168,12 @@ class RuleBase(object):
 
 class RuleExecutor(RuleBase):
     def transform(self, ctx: RuleContext, message: Any) -> Any:
-        pass
+        raise NotImplementedError
 
 
 class FieldRuleExecutor(RuleExecutor):
     def new_transform(self, ctx: RuleContext) -> FieldTransform:
-        pass
+        raise NotImplementedError
 
     def transform(self, ctx: RuleContext, message: Any) -> Any:
         # TODO preserve source
@@ -204,7 +203,7 @@ class FieldRuleExecutor(RuleExecutor):
 
 class RuleAction(RuleBase):
     def run(self, ctx: RuleContext, message: Any, ex: Optional[Exception]):
-        pass
+       raise NotImplementedError
 
 
 class ErrorAction(RuleAction):
