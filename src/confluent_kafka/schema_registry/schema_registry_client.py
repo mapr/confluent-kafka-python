@@ -1241,7 +1241,7 @@ class SchemaReference:
         return schema_reference
 
 
-@_attrs_define(frozen=True)
+@_attrs_define(frozen=True, cache_hash=True)
 class Schema:
     """
     An unregistered schema.
@@ -1338,7 +1338,7 @@ class Schema:
         return schema
 
 
-@_attrs_define(frozen=True)
+@_attrs_define(frozen=True, cache_hash=True)
 class RegisteredSchema:
     """
     An registered schema.
