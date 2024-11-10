@@ -184,7 +184,7 @@ class JSONSerializer(BaseSerializer):
 
         conf (dict): JsonSerializer configuration.
     """  # noqa: E501
-    __slots__ = ['_hash', '_known_subjects', '_parsed_schema', '_named_schemas',
+    __slots__ = ['_known_subjects', '_parsed_schema', '_named_schemas',
                  '_schema', '_schema_id', '_schema_name', '_to_dict', '_parsed_schemas']
 
     _default_conf = {'auto.register.schemas': True,
