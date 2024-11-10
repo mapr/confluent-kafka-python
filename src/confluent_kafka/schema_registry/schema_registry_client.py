@@ -18,6 +18,7 @@
 import json
 import logging
 import urllib
+
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 from collections import defaultdict
@@ -475,7 +476,7 @@ class SchemaRegistryClient(object):
 
         return schema_id
 
-    def get_schema(self, schema_id: int, subject_name: 'Schema' = None,
+    def get_schema(self, schema_id: int, subject_name: str = None,
         fmt: str = None) -> 'Schema':
         """
         Fetches the schema associated with ``schema_id`` from the
@@ -699,7 +700,7 @@ class SchemaRegistryClient(object):
         self._latest_version_cache[subject_name] = registered_schema
         return registered_schema
 
-    def get_latest_with_metadata(self, subject_name: str, metadata: dict,
+    def get_latest_with_metadata(self, subject_name: str, metadata: Dict[str, str],
         deleted: bool = False, fmt: str = None) -> 'RegisteredSchema':
         """
         Retrieves latest registered version for subject with the given metadata
@@ -1008,18 +1009,6 @@ class RuleParams:
     def additional_keys(self) -> List[str]:
         return list(self.params.keys())
 
-    def __getitem__(self, key: str) -> str:
-        return self.params[key]
-
-    def __setitem__(self, key: str, value: str) -> None:
-        self.params[key] = value
-
-    def __delitem__(self, key: str) -> None:
-        del self.params[key]
-
-    def __contains__(self, key: str) -> bool:
-        return key in self.params
-
 
 @_attrs_define
 class Rule:
@@ -1321,6 +1310,16 @@ class SchemaReference(object):
         self.subject = subject
         self.version = version
 
+    def __eq__(self, other):
+        if not isinstance(other, SchemaReference):
+            return False
+        return (self.name == other.name
+                and self.subject == other.subject
+                and self.version == other.version)
+
+    def __hash__(self):
+        return hash((self.name, self.subject, self.version))
+
 
 class Schema(object):
     """
@@ -1335,7 +1334,7 @@ class Schema(object):
     """
     __slots__ = ['schema_str', 'schema_type', 'references', 'metadata', 'rule_set', '_hash']
 
-    def __init__(self, schema_str: str, schema_type: str, references:List[SchemaReference] = None,
+    def __init__(self, schema_str: str, schema_type: str, references: List[SchemaReference] = None,
         metadata: Metadata = None, rule_set: RuleSet = None):
         self.schema_str = schema_str
         self.schema_type = schema_type
@@ -1345,11 +1344,13 @@ class Schema(object):
         self._hash = hash(schema_str)
 
     def __eq__(self, other):
-        return all([self.schema_str == other.schema_str,
-                    self.schema_type == other.schema_type,
-                    self.references == other.references,
-                    self.metadata == other.metadata,
-                    self.rule_set == other.rule_set])
+        if not isinstance(other, Schema):
+            return False
+        return (self.schema_str == other.schema_str
+                and self.schema_type == other.schema_type
+                and self.references == other.references
+                and self.metadata == other.metadata
+                and self.rule_set == other.rule_set)
 
     def __hash__(self):
         return self._hash
@@ -1377,3 +1378,16 @@ class RegisteredSchema(object):
         self.schema = schema
         self.subject = subject
         self.version = version
+
+    def __eq__(self, other):
+        if not isinstance(other, RegisteredSchema):
+            return False
+        return (self.schema_id == other.schema_id
+                and self.schema == other.schema
+                and self.subject == other.subject
+                and self.version == other.version)
+
+    def __hash__(self):
+        return hash((self.schema_id, self.schema, self.subject, self.version))
+
+
