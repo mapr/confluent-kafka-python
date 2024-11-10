@@ -392,11 +392,11 @@ class DekId(object):
     def __eq__(self, other):
         if not isinstance(other, DekId):
             return False
-        return (self.kek_name == other.kek_name and
-                self.subject == other.subject and
-                self.version == other.version and
-                self.algorithm == other.algorithm and
-                self.deleted == other.deleted)
+        return (self.kek_name == other.kek_name
+                and self.subject == other.subject
+                and self.version == other.version
+                and self.algorithm == other.algorithm
+                and self.deleted == other.deleted)
 
     def __hash__(self):
         return hash((self.kek_name, self.subject, self.version, self.algorithm, self.deleted))

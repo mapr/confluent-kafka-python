@@ -59,7 +59,7 @@ class MockDekRegistryClient(DekRegistryClient):
     def get_kek(self, name: str, deleted: bool = False) -> Kek:
         cache_key = KekId(name=name, deleted=deleted)
         kek = self._kek_cache.get_kek(cache_key)
-        if kek is not None and kek.deleted == deleted:
+        if kek is not None:
             return kek
 
         raise SchemaRegistryError(404, 40470, "Key Not Found")
@@ -95,10 +95,9 @@ class MockDekRegistryClient(DekRegistryClient):
             # Find the latest version
             latest_version = 0
             for dek_id in self._dek_cache.get_dek_ids():
-                if (dek_id.kek_name == kek_name and
-                    dek_id.subject == subject and
-                    dek_id.algorithm == algorithm and
-                    dek_id.deleted == deleted):
+                if (dek_id.kek_name == kek_name
+                    and dek_id.subject == subject
+                    and dek_id.algorithm == algorithm):
                     latest_version = max(latest_version, dek_id.version)
             if latest_version == 0:
                 raise SchemaRegistryError(404, 40470, "Key Not Found")
@@ -112,7 +111,7 @@ class MockDekRegistryClient(DekRegistryClient):
             deleted=deleted
         )
         dek = self._dek_cache.get_dek(cache_key)
-        if dek is not None and dek.deleted == deleted:
+        if dek is not None:
             return dek
 
         raise SchemaRegistryError(404, 40470, "Key Not Found")
