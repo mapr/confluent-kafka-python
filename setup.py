@@ -25,6 +25,8 @@ DOC_REQUIRES = ['sphinx', 'sphinx-rtd-theme']
 
 SCHEMA_REGISTRY_REQUIRES = ['requests', 'attrs', 'cachetools']
 
+RULES_REQUIRES = ['celpy', 'jsonata-python', 'tink'] + SCHEMA_REGISTRY_REQUIRES
+
 AVRO_REQUIRES = ['fastavro>=0.23.0,<1.0;python_version<"3.0"',
                  'fastavro>=1.0;python_version>"3.0"',
                  'avro>=1.11.1,<2',
@@ -88,6 +90,7 @@ setup(name='confluent-kafka',
       classifiers=trove_classifiers,
       extras_require={
           'schema-registry': SCHEMA_REGISTRY_REQUIRES,
+          'rules': RULES_REQUIRES,
           'avro': AVRO_REQUIRES,
           'json': JSON_REQUIRES,
           'protobuf': PROTO_REQUIRES,
