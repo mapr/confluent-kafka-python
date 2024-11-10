@@ -18,7 +18,7 @@
 import urllib.parse
 from enum import Enum
 from threading import Lock
-from typing import Any, Dict, Type, TypeVar, Optional
+from typing import Any, Dict, Type, TypeVar, Optional, List
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
@@ -428,6 +428,10 @@ class _DekCache(object):
     def set(self, dek_id: DekId, dek: Dek):
         with self.lock:
             self.deks[dek_id] = dek
+
+    def get_dek_ids(self) -> List[DekId]:
+        with self.lock:
+            return list(self.deks.keys())
 
     def get_dek(self, dek_id: DekId) -> Optional[Dek]:
         with self.lock:
