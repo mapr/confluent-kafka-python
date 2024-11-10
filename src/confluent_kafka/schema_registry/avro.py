@@ -101,7 +101,7 @@ def _resolve_named_schema(schema: Schema, schema_registry_client: SchemaRegistry
         named_schemas = {}
     if schema.references is not None:
         for ref in schema.references:
-            referenced_schema = schema_registry_client.get_version(ref.subject, ref.version)
+            referenced_schema = schema_registry_client.get_version(ref.subject, ref.version, True)
             _resolve_named_schema(referenced_schema.schema, schema_registry_client, named_schemas)
             parsed_schema = parse_schema(loads(referenced_schema.schema.schema_str), named_schemas=named_schemas)
             named_schemas[ref.name] = parsed_schema
@@ -520,7 +520,7 @@ class AvroDeserializer(BaseDeserializer):
                                          "Schema Registry serializer".format(magic))
 
             writer_schema_raw = self._registry.get_schema(schema_id)
-            writer_schema = self._get_parsed_schema(writer_schema_raw.schema)
+            writer_schema = self._get_parsed_schema(writer_schema_raw)
 
             if subject is None:
                 subject = self._subject_name_func(ctx, writer_schema.get("name"))
@@ -579,7 +579,7 @@ def transform(ctx: RuleContext, schema: AvroSchema, message: AvroMessage,
         return message
     field_ctx = ctx.current_field()
     if field_ctx is not None:
-        field_ctx.type = get_type(schema)
+        field_ctx.field_type = get_type(schema)
     if isinstance(schema, list):
         subschema = _resolve_union(schema, message)
         if subschema is None:
@@ -609,7 +609,7 @@ def transform(ctx: RuleContext, schema: AvroSchema, message: AvroMessage,
 
 def _transform_field(ctx: RuleContext, schema: AvroSchema, field: dict,
     message: AvroMessage, field_transform: FieldTransform):
-    type = field["type"]
+    field_type = field["type"]
     name = field["name"]
     full_name = schema["name"] + "." + name
     try:
@@ -617,11 +617,11 @@ def _transform_field(ctx: RuleContext, schema: AvroSchema, field: dict,
             message,
             full_name,
             name,
-            get_type(type),
+            get_type(field_type),
             None
         )
         value = message[name]
-        new_value = transform(ctx, type, value, field_transform)
+        new_value = transform(ctx, field_type, value, field_transform)
         if ctx.rule.kind == RuleKind.CONDITION:
             if new_value is False:
                 raise RuleConditionError(ctx.rule)

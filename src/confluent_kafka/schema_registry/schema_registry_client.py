@@ -438,6 +438,8 @@ class SchemaRegistryClient(object):
             subject_name (str): subject to register a schema under
 
             schema (Schema): Schema instance to register
+            
+            normalize_schemas (bool): Normalize schema before registering
 
         Returns:
             int: Schema id
@@ -474,7 +476,7 @@ class SchemaRegistryClient(object):
         return schema_id
 
     def get_schema(self, schema_id: int, subject_name: 'Schema' = None,
-        format: str = None) -> 'Schema':
+        fmt: str = None) -> 'Schema':
         """
         Fetches the schema associated with ``schema_id`` from the
         Schema Registry. The result is cached so subsequent attempts will not
@@ -482,6 +484,10 @@ class SchemaRegistryClient(object):
 
         Args:
             schema_id (int): Schema id
+            
+            subject_name (str): Subject name the schema is registered under
+            
+            fmt (str): Format of the schema
 
         Returns:
             Schema: Schema instance identified by the ``schema_id``
@@ -498,11 +504,11 @@ class SchemaRegistryClient(object):
             return schema
 
         query = {'subject': subject_name} if subject_name is not None else None
-        if format is not None:
+        if fmt is not None:
             if query is not None:
-                query['format'] = format
+                query['format'] = fmt
             else:
-                query = {'format': format}
+                query = {'format': fmt}
         response = self._rest_client.get('schemas/ids/{}'.format(schema_id), query)
         schema = Schema(schema_str=response['schema'],
                         schema_type=response.get('schemaType', 'AVRO'))
@@ -531,6 +537,8 @@ class SchemaRegistryClient(object):
             subject_name (str): Subject name the schema is registered under
 
             schema (Schema): Schema instance.
+            
+            normalize_schemas (bool): Normalize schema before registering
 
         Returns:
             RegisteredSchema: Subject registration information for this schema.
@@ -624,7 +632,7 @@ class SchemaRegistryClient(object):
             `DELETE Subject API Reference <https://docs.confluent.io/current/schema-registry/develop/api.html#delete--subjects-(string-%20subject)>`_
         """  # noqa: E501
 
-        list = self._rest_client.delete('subjects/{}'
+        versions = self._rest_client.delete('subjects/{}'
                                         .format(_urlencode(subject_name)))
 
         if permanent:
@@ -634,15 +642,17 @@ class SchemaRegistryClient(object):
         self._cache.remove_by_subject(subject_name)
         self._metadata_cache.remove_by_subject(subject_name)
 
-        return list
+        return versions
 
     def get_latest_version(self, subject_name: str,
-        format: str = None) -> 'RegisteredSchema':
+        fmt: str = None) -> 'RegisteredSchema':
         """
         Retrieves latest registered version for subject
 
         Args:
             subject_name (str): Subject name.
+            
+            fmt (str): Format of the schema
 
         Returns:
             RegisteredSchema: Registration information for this version.
@@ -658,7 +668,7 @@ class SchemaRegistryClient(object):
         if registered_schema is not None:
             return registered_schema
 
-        query = {'format': format} if format is not None else None
+        query = {'format': fmt} if fmt is not None else None
         response = self._rest_client.get('subjects/{}/versions/{}'
                                          .format(_urlencode(subject_name),
                                                  'latest'), query)
@@ -690,13 +700,15 @@ class SchemaRegistryClient(object):
         return registered_schema
 
     def get_latest_with_metadata(self, subject_name: str, metadata: dict,
-        format: str = None) -> 'RegisteredSchema':
+        deleted: bool = False, fmt: str = None) -> 'RegisteredSchema':
         """
         Retrieves latest registered version for subject with the given metadata
 
         Args:
             subject_name (str): Subject name.
             metadata (dict): The key-value pairs for the metadata.
+            deleted (bool): Whether to include deleted schemas.
+            fmt (str): Format of the schema
 
         Returns:
             RegisteredSchema: Registration information for this version.
@@ -710,7 +722,7 @@ class SchemaRegistryClient(object):
         if registered_schema is not None:
             return registered_schema
 
-        query = {'format': format} if format is not None else None
+        query = {'deleted': deleted, 'format': fmt} if fmt is not None else {'deleted': deleted}
         response = self._rest_client.get('subjects/{}/versions/{}'
                                          .format(_urlencode(subject_name),
                                                  'latest'), query)
@@ -742,7 +754,7 @@ class SchemaRegistryClient(object):
         return registered_schema
 
     def get_version(self, subject_name: str, version: int,
-        format: str = None) -> 'RegisteredSchema':
+        deleted: bool = False, fmt: str = None) -> 'RegisteredSchema':
         """
         Retrieves a specific schema registered under ``subject_name``.
 
@@ -750,6 +762,10 @@ class SchemaRegistryClient(object):
             subject_name (str): Subject name.
 
             version (int): version number. Defaults to latest version.
+            
+            deleted (bool): Whether to include deleted schemas.
+            
+            fmt (str): Format of the schema
 
         Returns:
             RegisteredSchema: Registration information for this version.
@@ -765,7 +781,7 @@ class SchemaRegistryClient(object):
         if registered_schema is not None:
             return registered_schema
 
-        query = {'format': format} if format is not None else None
+        query = {'deleted': deleted, 'format': fmt} if fmt is not None else {'deleted': deleted}
         response = self._rest_client.get('subjects/{}/versions/{}'
                                          .format(_urlencode(subject_name),
                                                  version), query)
@@ -931,7 +947,7 @@ class SchemaRegistryClient(object):
             ]
 
         response = self._rest_client.post(
-            'compatibility/subjects/{}/versions/{}'.format(subject_name, version), body=request
+            'compatibility/subjects/{}/versions/{}'.format(_urlencode(subject_name), version), body=request
         )
 
         return response['is_compatible']
@@ -1319,11 +1335,11 @@ class Schema(object):
     """
     __slots__ = ['schema_str', 'schema_type', 'references', 'metadata', 'rule_set', '_hash']
 
-    def __init__(self, schema_str: str, schema_type: str, references:List[SchemaReference] = [],
+    def __init__(self, schema_str: str, schema_type: str, references:List[SchemaReference] = None,
         metadata: Metadata = None, rule_set: RuleSet = None):
         self.schema_str = schema_str
         self.schema_type = schema_type
-        self.references = references
+        self.references = references or []
         self.metadata = metadata
         self.rule_set = rule_set
         self._hash = hash(schema_str)

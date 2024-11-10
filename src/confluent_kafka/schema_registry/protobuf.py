@@ -21,7 +21,7 @@ import base64
 import struct
 import warnings
 from collections import deque
-from typing import Set, List, Union, Dict, Optional, Any
+from typing import Set, List, Union, Optional, Any
 
 from google.protobuf import descriptor_pb2
 from google.protobuf import json_format
@@ -178,7 +178,7 @@ def _resolve_named_schema(schema: Schema, schema_registry_client: SchemaRegistry
     if schema.references is not None:
         for ref in schema.references:
             # TODO RAY pass format
-            referenced_schema = schema_registry_client.get_version(ref.subject, ref.version)
+            referenced_schema = schema_registry_client.get_version(ref.subject, ref.version, True)
             _resolve_named_schema(referenced_schema.schema, schema_registry_client, pool)
             pool.Add(_str_to_schema(referenced_schema.schema.schema_str))
     return pool
@@ -489,7 +489,7 @@ class ProtobufSerializer(BaseSerializer):
 
         subject = self._subject_name_func(ctx,
                                           message.DESCRIPTOR.full_name)
-        latest_schema = self._get_reader_schema(subject, format='serialized')
+        latest_schema = self._get_reader_schema(subject, fmt='serialized')
         if latest_schema is not None:
             self._schema_id = latest_schema.schema_id
         elif subject not in self._known_subjects:
@@ -747,7 +747,7 @@ class ProtobufDeserializer(BaseDeserializer):
         subject = self._subject_name_func(ctx, None)
         latest_schema = None
         if subject is not None:
-            latest_schema = self._get_reader_schema(subject, format='serialized')
+            latest_schema = self._get_reader_schema(subject, fmt='serialized')
 
         with _ContextStringIO(data) as payload:
             magic, schema_id = struct.unpack('>bI', payload.read(5))
@@ -758,14 +758,14 @@ class ProtobufDeserializer(BaseDeserializer):
 
             msg_index = self._read_index_array(payload, zigzag=not self._use_deprecated_format)
 
-            writer_schema_raw = self._registry.get_schema(schema_id, format='serialized')
-            writer_schema = self._get_parsed_schema(writer_schema_raw.schema)
+            writer_schema_raw = self._registry.get_schema(schema_id, fmt='serialized')
+            writer_schema = self._get_parsed_schema(writer_schema_raw)
             writer_desc = self._get_message_desc(writer_schema, msg_index)
 
             if subject is None:
                 subject = self._subject_name_func(ctx, writer_desc.full_name)
                 if subject is not None:
-                    latest_schema = self._get_reader_schema(subject, format='serialized')
+                    latest_schema = self._get_reader_schema(subject, fmt='serialized')
 
             if latest_schema is not None:
                 migrations = self._get_migrations(subject, writer_schema_raw, latest_schema, None)

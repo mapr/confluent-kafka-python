@@ -75,7 +75,7 @@ def _resolve_named_schema(schema: Schema, schema_registry_client: SchemaRegistry
         named_schemas = {}
     if schema.references is not None:
         for ref in schema.references:
-            referenced_schema = schema_registry_client.get_version(ref.subject, ref.version)
+            referenced_schema = schema_registry_client.get_version(ref.subject, ref.version, True)
             _resolve_named_schema(referenced_schema.schema, schema_registry_client, named_schemas)
             referenced_schema_dict = json.loads(referenced_schema.schema.schema_str)
             named_schemas[ref.name] = referenced_schema_dict
@@ -475,7 +475,7 @@ class JSONDeserializer(BaseDeserializer):
             obj_dict = json.loads(payload.read())
 
             writer_schema_raw = self._registry.get_schema(schema_id)
-            writer_schema, writer_named_schemas = self._get_parsed_schema(writer_schema_raw.schema)
+            writer_schema, writer_named_schemas = self._get_parsed_schema(writer_schema_raw)
 
             if subject is None:
                 subject = self._subject_name_func(ctx, writer_schema.get("title"))
@@ -536,7 +536,7 @@ def transform(ctx: RuleContext, schema: JsonSchema, named_schemas: Dict[str, Jso
         return message
     field_ctx = ctx.current_field()
     if field_ctx is not None:
-        field_ctx.type = get_type(schema)
+        field_ctx.field_type = get_type(schema)
     all_of = schema.get("allOf")
     if all_of is not None:
         subschema = _validate_subschemas(all_of, message)
@@ -560,15 +560,15 @@ def transform(ctx: RuleContext, schema: JsonSchema, named_schemas: Dict[str, Jso
     if ref is not None:
         ref_schema = named_schemas.get(ref)
         return transform(ctx, ref_schema, named_schemas, path, message, field_transform)
-    type = get_type(schema)
-    if type == FieldType.RECORD:
+    schema_type = get_type(schema)
+    if schema_type == FieldType.RECORD:
         props = schema.get("properties")
         if props is not None:
             for prop_name, prop_schema in props.items():
                 _transform_field(ctx, path, prop_name, message,
                                  prop_schema, named_schemas, field_transform)
         return message
-    if type in (FieldType.ENUM, FieldType.STRING, FieldType.INT, FieldType.DOUBLE, FieldType.BOOLEAN):
+    if schema_type in (FieldType.ENUM, FieldType.STRING, FieldType.INT, FieldType.DOUBLE, FieldType.BOOLEAN):
         if field_ctx is not None:
             rule_tags = ctx.rule.tags
             if (rule_tags is None or len(rule_tags) == 0 or
@@ -613,27 +613,27 @@ def _validate_subschemas(subschemas: List[JsonSchema],
 def get_type(schema: JsonSchema) -> FieldType:
     if isinstance(schema, bool):
         return FieldType.NULL
-    type = schema["type"]
-    if isinstance(type, list):
+    schema_type = schema["type"]
+    if isinstance(schema_type, list):
         return FieldType.COMBINED
     if schema.get("const") is not None or schema.get("enum") is not None:
         return FieldType.ENUM
-    if type == "object":
+    if schema_type == "object":
         props = schema.get("properties")
         if props is None or len(props) == 0:
             return FieldType.MAP
         return FieldType.RECORD
-    if type == "array":
+    if schema_type == "array":
         return FieldType.ARRAY
-    if type == "string":
+    if schema_type == "string":
         return FieldType.STRING
-    if type == "integer":
+    if schema_type == "integer":
         return FieldType.INT
-    if type == "number":
+    if schema_type == "number":
         return FieldType.DOUBLE
-    if type == "boolean":
+    if schema_type == "boolean":
         return FieldType.BOOLEAN
-    if type == "null":
+    if schema_type == "null":
         return FieldType.NULL
     return FieldType.NULL
 

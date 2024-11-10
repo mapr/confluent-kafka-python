@@ -63,23 +63,23 @@ class FieldType(str, Enum):
 
 
 class FieldContext(object):
-    __slots__ = ['containing_message', 'full_name', 'name', 'type', 'tags']
+    __slots__ = ['containing_message', 'full_name', 'name', 'field_type', 'tags']
 
     def __init__(self, containing_message: Any, full_name: str, name: str,
-        type: FieldType, tags: Set[str]):
+        field_type: FieldType, tags: Set[str]):
         self.containing_message = containing_message
         self.full_name = full_name
         self.name = name
-        self.type = type
+        self.field_type = field_type
         self.tags = tags
 
     def _is_primitive(self) -> bool:
-        return self.type in (FieldType.INT, FieldType.LONG, FieldType.FLOAT,
-                             FieldType.DOUBLE, FieldType.BOOLEAN, FieldType.NULL,
-                             FieldType.STRING, FieldType.BYTES)
+        return self.field_type in (FieldType.INT, FieldType.LONG, FieldType.FLOAT,
+                                   FieldType.DOUBLE, FieldType.BOOLEAN, FieldType.NULL,
+                                   FieldType.STRING, FieldType.BYTES)
 
     def _type_name(self) -> str:
-        return self.type.name
+        return self.field_type.name
 
 
 class RuleContext(object):
@@ -256,13 +256,13 @@ class BaseSerde(object):
                  '_registry', '_rule_registry', '_subject_name_func',
                  '_field_transformer']
 
-    def _get_reader_schema(self, subject: str, format: str = None) -> RegisteredSchema:
+    def _get_reader_schema(self, subject: str, fmt: str = None) -> RegisteredSchema:
         latest_schema = None
         if self._use_latest_with_metadata is not None:
             latest_schema = self._registry.get_latest_version_with_metadata(
-                subject, self._use_latest_with_metadata, format)
+                subject, self._use_latest_with_metadata, fmt, True)
         if self._use_latest_version:
-            latest_schema = self._registry.get_latest_version(subject, format)
+            latest_schema = self._registry.get_latest_version(subject, fmt)
         return latest_schema
 
     def _execute_rules(self, ser_ctx: SerializationContext, subject: str,
@@ -390,7 +390,7 @@ class BaseDeserializer(BaseSerde, Deserializer):
             return any(rule.mode == mode for rule in rule_set.migration_rules)
 
     def _get_migrations(self, subject: str, source_info: Schema,
-        target: RegisteredSchema, format: Optional[str]) -> List[Migration]:
+        target: RegisteredSchema, fmt: Optional[str]) -> List[Migration]:
         version = self._registry.lookup_schema(subject, source_info)
         source = RegisteredSchema(0, source_info, subject, version)
         migrations = []
@@ -405,7 +405,7 @@ class BaseDeserializer(BaseSerde, Deserializer):
         else:
             return migrations
         previous: Optional[RegisteredSchema] = None
-        versions = self._get_schemas_between(subject, first, last, format)
+        versions = self._get_schemas_between(subject, first, last, fmt)
         for i in range(len(versions)):
             version = versions[i]
             if i == 0:
@@ -423,14 +423,14 @@ class BaseDeserializer(BaseSerde, Deserializer):
         return migrations
 
     def _get_schemas_between(self, subject: str, first: RegisteredSchema,
-        last: RegisteredSchema, format: str = None) -> List[RegisteredSchema]:
+        last: RegisteredSchema, fmt: str = None) -> List[RegisteredSchema]:
         if last.version - first.version <= 1:
             return [first, last]
         version1 = first.version
         version2 = last.version
         result = [first]
         for i in range(version1 + 1, version2):
-            result.append(self._registry.get_version(subject, i, format))
+            result.append(self._registry.get_version(subject, i, fmt, True))
         result.append(last)
         return result
 
@@ -486,9 +486,3 @@ class ParsedSchemaCache(object):
 
         with self.lock:
             self.parsed_schemas.clear()
-
-
-
-
-
-
