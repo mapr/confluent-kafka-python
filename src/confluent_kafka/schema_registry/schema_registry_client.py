@@ -893,9 +893,9 @@ class RuleMode(str, Enum):
         return str(self.value)
 
 
-@_attrs_define(eq=True)
+@_attrs_define
 class RuleParams:
-    params: Dict[str, str] = _attrs_field(init=False, factory=dict)
+    params: Dict[str, str] = _attrs_field(factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         field_dict: Dict[str, Any] = {}
@@ -915,7 +915,7 @@ class RuleParams:
         return hash(frozenset(self.params.items()))
 
 
-@_attrs_define(eq=True)
+@_attrs_define
 class Rule:
     name: Optional[str]
     doc: Optional[str]
@@ -1041,7 +1041,7 @@ class Rule:
                      self.on_success, self.on_failure, self.disabled))
 
 
-@_attrs_define(eq=True)
+@_attrs_define
 class RuleSet:
     migration_rules: Optional[List["Rule"]]
     domain_rules: Optional[List["Rule"]]
@@ -1096,9 +1096,9 @@ class RuleSet:
         return hash((frozenset(self.migration_rules), frozenset(self.domain_rules)))
 
 
-@_attrs_define(eq=True)
+@_attrs_define
 class MetadataTags:
-    tags: Dict[str, List[str]] = _attrs_field(init=False, factory=dict)
+    tags: Dict[str, List[str]] = _attrs_field(factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         field_dict: Dict[str, Any] = {}
@@ -1125,9 +1125,9 @@ class MetadataTags:
         return hash(frozenset(self.tags.items()))
 
 
-@_attrs_define(eq=True)
+@_attrs_define
 class MetadataProperties:
-    properties: Dict[str, str] = _attrs_field(init=False, factory=dict)
+    properties: Dict[str, str] = _attrs_field(factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         field_dict: Dict[str, Any] = {}
@@ -1147,7 +1147,7 @@ class MetadataProperties:
         return hash(frozenset(self.properties.items()))
 
 
-@_attrs_define(eq=True)
+@_attrs_define
 class Metadata:
     tags: Optional[MetadataTags]
     properties: Optional[MetadataProperties]
@@ -1208,7 +1208,7 @@ class Metadata:
         return hash((self.tags, self.properties, frozenset(self.sensitive)))
 
 
-@_attrs_define(eq=True)
+@_attrs_define
 class SchemaReference:
     name: Optional[str]
     subject: Optional[str]
@@ -1252,7 +1252,7 @@ class SchemaReference:
         return hash((self.name, self.subject, self.version))
 
 
-@_attrs_define(eq=True)
+@_attrs_define
 class Schema:
     """
     An unregistered schema.
@@ -1260,7 +1260,7 @@ class Schema:
 
     schema_str: Optional[str]
     schema_type: Optional[str] = "AVRO"
-    references: Optional[List[SchemaReference]] = []
+    references: Optional[List[SchemaReference]] = _attrs_field(factory=list)
     metadata: Optional[Metadata] = None
     rule_set: Optional[RuleSet] = None
 
@@ -1352,7 +1352,7 @@ class Schema:
         return hash(self.schema_str)
 
 
-@_attrs_define(eq=True)
+@_attrs_define
 class RegisteredSchema:
     """
     An registered schema.

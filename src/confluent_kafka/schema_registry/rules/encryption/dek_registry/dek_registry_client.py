@@ -360,13 +360,13 @@ class CreateDekRequest:
         return create_dek_request
 
 
-@_attrs_define(eq=True, frozen=True)
+@_attrs_define(frozen=True)
 class KekId:
     name: str
     deleted: bool
 
 
-@_attrs_define(eq=True, frozen=True)
+@_attrs_define(frozen=True)
 class DekId:
     kek_name: str
     subject: str
