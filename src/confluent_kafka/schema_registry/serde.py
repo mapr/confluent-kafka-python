@@ -33,7 +33,7 @@ __all__ = ['BaseSerializer',
 import logging
 from enum import Enum
 from threading import Lock
-from typing import Callable, List, Optional, Set, Dict, Any
+from typing import Callable, List, Optional, Set, Dict, Any, TypeVar
 
 from confluent_kafka.schema_registry import RegisteredSchema
 from confluent_kafka.schema_registry.schema_registry_client import RuleMode, \
@@ -443,6 +443,9 @@ class BaseDeserializer(BaseSerde, Deserializer):
         return message
 
 
+T = TypeVar("T")
+
+
 class ParsedSchemaCache(object):
     """
     Thread-safe cache for parsed chemas
@@ -452,7 +455,7 @@ class ParsedSchemaCache(object):
         self.lock = Lock()
         self.parsed_schemas = {}
 
-    def set(self, schema: Schema, parsed_schema: Any):
+    def set(self, schema: Schema, parsed_schema: T):
         """
         Add a Schema identified by schema_id to the cache.
 
@@ -465,7 +468,7 @@ class ParsedSchemaCache(object):
         with self.lock:
             self.parsed_schemas[schema] = parsed_schema
 
-    def get_parsed_schema(self, schema: Schema) -> Any:
+    def get_parsed_schema(self, schema: Schema) -> T:
         """
         Get the parsed schema associated with the schema
 
