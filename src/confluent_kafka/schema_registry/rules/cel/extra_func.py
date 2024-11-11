@@ -14,6 +14,7 @@
 # limitations under the License.
 
 import typing
+import uuid
 from email.utils import parseaddr
 from ipaddress import IPv4Address, IPv4Network, IPv6Address, IPv6Network, ip_address, ip_network
 from urllib import parse as urlparse
@@ -112,6 +113,14 @@ def validate_ip(val: typing.Union[str, bytes], version: typing.Optional[int] = N
         return False
 
 
+def validate_uuid(val: str) -> bool
+    try:
+        uuid.UUID(val)
+        return True
+    except ValueError:
+        return False
+
+
 def is_ipv4(val: celtypes.Value) -> celpy.Result:
     if not isinstance(val, (celtypes.BytesType, celtypes.StringType)):
         msg = "invalid argument, expected string or bytes"
@@ -124,40 +133,6 @@ def is_ipv6(val: celtypes.Value) -> celpy.Result:
         msg = "invalid argument, expected string or bytes"
         raise celpy.CELEvalError(msg)
     return celtypes.BoolType(validate_ip(val, 6))
-
-
-def is_ip_prefix(val: celtypes.Value, *args) -> celpy.Result:
-    if not isinstance(val, (celtypes.BytesType, celtypes.StringType)):
-        msg = "invalid argument, expected string or bytes"
-        raise celpy.CELEvalError(msg)
-    version = None
-    strict = celtypes.BoolType(False)
-    if len(args) == 1 and isinstance(args[0], celtypes.BoolType):
-        strict = args[0]
-    elif len(args) == 1 and isinstance(args[0], celtypes.IntType):
-        version = args[0]
-    elif len(args) == 1 and (not isinstance(args[0], celtypes.BoolType) or not isinstance(args[0], celtypes.IntType)):
-        msg = "invalid argument, expected bool or int"
-        raise celpy.CELEvalError(msg)
-    elif len(args) == 2 and isinstance(args[0], celtypes.IntType) and isinstance(args[1], celtypes.BoolType):
-        version = args[0]
-        strict = args[1]
-    elif len(args) == 2 and (not isinstance(args[0], celtypes.IntType) or not isinstance(args[1], celtypes.BoolType)):
-        msg = "invalid argument, expected int and bool"
-        raise celpy.CELEvalError(msg)
-    try:
-        if version is None:
-            ip_network(val, strict=strict)
-        elif version == 4:
-            IPv4Network(val, strict=strict)
-        elif version == 6:
-            IPv6Network(val, strict=strict)
-        else:
-            msg = "invalid argument, expected 4 or 6"
-            raise celpy.CELEvalError(msg)
-        return celtypes.BoolType(True)
-    except ValueError:
-        return celtypes.BoolType(False)
 
 
 def is_email(string: celtypes.Value) -> celpy.Result:
@@ -188,11 +163,11 @@ def is_hostname(string: celtypes.Value) -> celpy.Result:
     return celtypes.BoolType(_validate_hostname(string))
 
 
-def unique(val: celtypes.Value) -> celpy.Result:
-    if not isinstance(val, celtypes.ListType):
-        msg = "invalid argument, expected list"
+def is_uuid(string: celtypes.Value) -> celpy.Result:
+    if not isinstance(string, celtypes.StringType):
+        msg = "invalid argument, expected string"
         raise celpy.CELEvalError(msg)
-    return celtypes.BoolType(len(val) == len(set(val)))
+    return celtypes.BoolType(validate_uuid(string))
 
 
 def make_extra_funcs(locale: str) -> typing.Dict[str, celpy.CELFunction]:
@@ -203,12 +178,11 @@ def make_extra_funcs(locale: str) -> typing.Dict[str, celpy.CELFunction]:
         # protovalidate specific functions
         "isIpv4": is_ipv4,
         "isIpv6": is_ipv6,
-        "isIpPrefix": is_ip_prefix,
         "isEmail": is_email,
         "isUri": is_uri,
         "isUriRef": is_uri_ref,
         "isHostname": is_hostname,
-        "unique": unique,
+        "isUuid": is_uuid,
     }
 
 
