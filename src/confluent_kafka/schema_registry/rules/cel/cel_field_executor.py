@@ -16,6 +16,7 @@ import celpy  # type: ignore
 
 from typing import Any
 
+from confluent_kafka.schema_registry.rule_registry import RuleRegistry
 from confluent_kafka.schema_registry.rules.cel.cel_executor import CelExecutor
 from confluent_kafka.schema_registry.rules.cel.constraints import _msg_to_cel, \
     _scalar_field_value_to_cel
@@ -27,6 +28,9 @@ class CelFieldExecutor(FieldRuleExecutor):
 
     def __init__(self):
         self._executor = CelExecutor()
+
+    def type(self) -> str:
+        return "CEL_FIELD"
 
     def new_transform(self, ctx: RuleContext) -> FieldTransform:
         return self._field_transform
@@ -48,3 +52,7 @@ class CelFieldExecutor(FieldRuleExecutor):
             "message": _msg_to_cel(field_value) ,
         }
         return self._executor.execute(ctx, field_value, args)
+
+    @staticmethod
+    def register():
+        RuleRegistry.register_rule_executor(CelFieldExecutor())

@@ -18,6 +18,9 @@ from threading import Lock
 from typing import Any, Optional
 
 from confluent_kafka.schema_registry import RuleKind, Schema
+from confluent_kafka.schema_registry.rule_registry import RuleRegistry
+from confluent_kafka.schema_registry.rules.cel.cel_field_executor import \
+    CelFieldExecutor
 from confluent_kafka.schema_registry.rules.cel.cel_field_presence import \
     InterpretedRunner
 from confluent_kafka.schema_registry.rules.cel.constraints import _msg_to_cel
@@ -31,6 +34,9 @@ class CelExecutor(RuleExecutor):
         self._env = celpy.Environment(runner_class=InterpretedRunner)
         self._funcs = EXTRA_FUNCS
         self._cache = _CelCache()
+
+    def type(self) -> str:
+        return "CEL"
 
     def transform(self, ctx: RuleContext, message: Any) -> Any:
         args = { "message": _msg_to_cel(message) }
@@ -63,6 +69,11 @@ class CelExecutor(RuleExecutor):
         if isinstance(result, celpy.BoolType):
             return bool(result.value)
         return result
+
+    @staticmethod
+    def register():
+        RuleRegistry.register_rule_executor(CelExecutor())
+        RuleRegistry.register_rule_executor(CelFieldExecutor())
 
 
 class _CelCache(object):

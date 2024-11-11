@@ -18,6 +18,7 @@ from typing import Optional, Any
 
 from threading import Lock
 
+from confluent_kafka.schema_registry.rule_registry import RuleRegistry
 from confluent_kafka.schema_registry.serde import RuleExecutor, RuleContext
 
 
@@ -26,12 +27,19 @@ class JsonataExecutor(RuleExecutor):
     def __init__(self):
         self._cache = _JsonataCache()
 
+    def type(self) -> str:
+        return "JSONATA"
+
     def transform(self, ctx: RuleContext, message: Any) -> Any:
         expr = self._cache.get_jsonata(ctx.rule.expr)
         if expr is None:
             expr = jsonata.Jsonata(ctx.rule.expr)
             self._cache.set(ctx.rule.expr, jsonata)
         return expr.evaluate(message)
+
+    @staticmethod
+    def register():
+        RuleRegistry.register_rule_executor(JsonataExecutor())
 
 
 class _JsonataCache(object):
