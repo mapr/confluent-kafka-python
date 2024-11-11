@@ -15,7 +15,7 @@
 import celpy  # type: ignore
 
 from threading import Lock
-from typing import Any
+from typing import Any, Optional
 
 from confluent_kafka.schema_registry import RuleKind, Schema
 from confluent_kafka.schema_registry.rules.cel.cel_field_presence import \
@@ -30,7 +30,7 @@ class CelExecutor(RuleExecutor):
     def __init__(self):
         self._env = celpy.Environment(runner_class=InterpretedRunner)
         self._funcs = EXTRA_FUNCS
-        self._cache = CelCache()
+        self._cache = _CelCache()
 
     def transform(self, ctx: RuleContext, message: Any) -> Any:
         args = { "message": _msg_to_cel(message) }
@@ -65,7 +65,7 @@ class CelExecutor(RuleExecutor):
         return result
 
 
-class CelCache(object):
+class _CelCache(object):
     def __init__(self):
         self.lock = Lock()
         self.programs = {}
@@ -74,7 +74,7 @@ class CelCache(object):
         with self.lock:
             self.programs[(expr, script_type, schema)] = prog
 
-    def get_program(self, expr: str, script_type: str, schema: Schema) -> Any:
+    def get_program(self, expr: str, script_type: str, schema: Schema) -> Optional[celpy.Runner]:
         with self.lock:
             return self.programs.get((expr, script_type, schema), None)
 
