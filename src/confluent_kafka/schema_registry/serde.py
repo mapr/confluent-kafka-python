@@ -468,7 +468,7 @@ class ParsedSchemaCache(object):
         with self.lock:
             self.parsed_schemas[schema] = parsed_schema
 
-    def get_parsed_schema(self, schema: Schema) -> T:
+    def get_parsed_schema(self, schema: Schema) -> Optional[T]:
         """
         Get the parsed schema associated with the schema
 
