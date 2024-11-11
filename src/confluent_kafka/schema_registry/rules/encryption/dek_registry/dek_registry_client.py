@@ -438,7 +438,7 @@ class DekRegistryClient(object):
 
     def __exit__(self, *args):
         if self._rest_client is not None:
-            self._rest_client._close()
+            self._rest_client.close()
 
     def register_kek(self, name: str, kms_type: str, kms_key_id: str,
         kms_props: Dict[str, str] = None, doc: str = None, shared: bool = False) -> Kek:

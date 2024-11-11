@@ -19,6 +19,7 @@
 __all__ = ['BaseSerializer',
            'BaseDeserializer',
            'FieldContext',
+           'FieldRuleExecutor',
            'FieldTransform',
            'FieldTransformer',
            'FieldType',
@@ -73,12 +74,12 @@ class FieldContext(object):
         self.field_type = field_type
         self.tags = tags
 
-    def _is_primitive(self) -> bool:
+    def is_primitive(self) -> bool:
         return self.field_type in (FieldType.INT, FieldType.LONG, FieldType.FLOAT,
                                    FieldType.DOUBLE, FieldType.BOOLEAN, FieldType.NULL,
                                    FieldType.STRING, FieldType.BYTES)
 
-    def _type_name(self) -> str:
+    def type_name(self) -> str:
         return self.field_type.name
 
 

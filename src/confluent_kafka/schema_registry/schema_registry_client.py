@@ -125,7 +125,7 @@ class _RestClient(object):
             raise ValueError("Unrecognized properties: {}"
                              .format(", ".join(conf_copy.keys())))
 
-    def _close(self):
+    def close(self):
         self.session.close()
 
     def get(self, url: str, query: dict = None) -> Any:
@@ -428,7 +428,7 @@ class SchemaRegistryClient(object):
 
     def __exit__(self, *args):
         if self._rest_client is not None:
-            self._rest_client._close()
+            self._rest_client.close()
 
     def register_schema(self, subject_name: str, schema: 'Schema',
         normalize_schemas: bool = False) -> int:

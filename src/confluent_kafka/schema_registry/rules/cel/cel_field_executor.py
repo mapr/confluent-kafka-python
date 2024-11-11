@@ -1,0 +1,50 @@
+# Copyright 2024 Confluent Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import celpy  # type: ignore
+
+from typing import Any
+
+from confluent_kafka.schema_registry.rules.cel.cel_executor import CelExecutor
+from confluent_kafka.schema_registry.rules.cel.constraints import _msg_to_cel, \
+    _scalar_field_value_to_cel
+from confluent_kafka.schema_registry.serde import RuleContext, \
+    FieldRuleExecutor, FieldTransform, FieldContext
+
+
+class CelFieldExecutor(FieldRuleExecutor):
+
+    def __init__(self):
+        self._executor = CelExecutor()
+
+    def new_transform(self, ctx: RuleContext) -> FieldTransform:
+        return self._field_transform
+
+    def _field_transform(self, ctx: RuleContext, field_ctx: FieldContext, field_value: Any) -> Any:
+        if field_value is None:
+            return None
+        if not field_ctx.is_primitive():
+            return field_value
+        message = field_ctx.containing_message
+        desc = message.DESCRIPTOR
+        field_desc = desc.fields_by_name[field_ctx.name]
+        args = {
+            "value": _scalar_field_value_to_cel(field_value, field_desc),
+            "fullName": field_ctx.full_name,
+            "name": field_ctx.name,
+            "typeName": field_ctx.type_name(),
+            "tags": [ celpy.StringType(tag) for tag in field_ctx.tags ],
+            "message": _msg_to_cel(field_value) ,
+        }
+        return self._executor.execute(ctx, field_value, args)
