@@ -16,7 +16,7 @@
 import typing
 import uuid
 from email.utils import parseaddr
-from ipaddress import IPv4Address, IPv4Network, IPv6Address, IPv6Network, ip_address, ip_network
+from ipaddress import IPv4Address, IPv6Address, ip_address
 from urllib import parse as urlparse
 
 import celpy  # type: ignore
@@ -113,7 +113,7 @@ def validate_ip(val: typing.Union[str, bytes], version: typing.Optional[int] = N
         return False
 
 
-def validate_uuid(val: str) -> bool
+def validate_uuid(val: str) -> bool:
     try:
         uuid.UUID(val)
         return True
