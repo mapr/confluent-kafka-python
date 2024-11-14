@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import celpy  # type: ignore
-
 from typing import Any
+
+from celpy.celtypes import StringType
 
 from confluent_kafka.schema_registry.rule_registry import RuleRegistry
 from confluent_kafka.schema_registry.rules.cel.cel_executor import CelExecutor
@@ -48,7 +48,7 @@ class CelFieldExecutor(FieldRuleExecutor):
             "fullName": field_ctx.full_name,
             "name": field_ctx.name,
             "typeName": field_ctx.type_name(),
-            "tags": [ celpy.StringType(tag) for tag in field_ctx.tags ],
+            "tags": [ StringType(tag) for tag in field_ctx.tags ],
             "message": _msg_to_cel(field_value) ,
         }
         return self._executor.execute(ctx, field_value, args)

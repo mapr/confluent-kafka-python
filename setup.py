@@ -25,7 +25,7 @@ DOC_REQUIRES = ['sphinx', 'sphinx-rtd-theme']
 
 SCHEMA_REGISTRY_REQUIRES = ['requests', 'attrs', 'cachetools']
 
-RULES_REQUIRES = ['celpy', 'jsonata-python', 'tink'] + SCHEMA_REGISTRY_REQUIRES
+RULES_REQUIRES = ['cel-python', 'jsonata-python', 'tink'] + SCHEMA_REGISTRY_REQUIRES
 
 AVRO_REQUIRES = ['fastavro>=0.23.0,<1.0;python_version<"3.0"',
                  'fastavro>=1.0;python_version>"3.0"',

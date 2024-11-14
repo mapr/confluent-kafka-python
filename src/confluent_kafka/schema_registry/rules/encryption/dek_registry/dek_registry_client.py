@@ -15,6 +15,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+import base64
 import urllib.parse
 from enum import Enum
 from threading import Lock
@@ -223,9 +224,31 @@ class Dek:
     version: Optional[int]
     algorithm: Optional[DekAlgorithm]
     encrypted_key_material: Optional[str]
+    encrypted_key_material_bytes: Optional[bytes] = _attrs_field(init=False, eq=False, order=False)
     key_material: Optional[str]
+    key_material_bytes: Optional[bytes] = _attrs_field(init=False, eq=False, order=False)
     ts: Optional[int]
     deleted: Optional[bool]
+
+    def get_encrypted_key_material_bytes(self) -> Optional[bytes]:
+        if self.encrypted_key_material is None:
+            return None
+        if self.encrypted_key_material_bytes is None:
+            self.encrypted_key_material_bytes = base64.b64decode(self.encrypted_key_material)
+        return self.encrypted_key_material_bytes
+
+    def get_key_material_bytes(self) -> Optional[bytes]:
+        if self.key_material is None:
+            return None
+        if self.key_material_bytes is None:
+            self.key_material_bytes = base64.b64decode(self.key_material)
+        return self.key_material_bytes
+
+    def set_key_material(self, key_material_bytes: bytes):
+        if key_material_bytes is None:
+            self.key_material = None
+        else:
+            self.key_material = base64.b64encode(key_material_bytes).decode("utf-8")
 
     def to_dict(self) -> Dict[str, Any]:
         kek_name = self.kek_name
@@ -441,7 +464,7 @@ class DekRegistryClient(object):
             self._rest_client.close()
 
     def register_kek(self, name: str, kms_type: str, kms_key_id: str,
-        kms_props: Dict[str, str] = None, doc: str = None, shared: bool = False) -> Kek:
+        shared: bool = False, kms_props: Dict[str, str] = None, doc: str = None) -> Kek:
         """
         Register a new Key Encryption Key (KEK) with the DEK Registry.
 
@@ -571,8 +594,8 @@ class DekRegistryClient(object):
 
         return dek
 
-    def get_dek(self, kek_name: str, subject: str, deleted: bool = False,
-        algorithm: DekAlgorithm = DekAlgorithm.AES256_GCM, version: int = 1) -> Dek:
+    def get_dek(self, kek_name: str, subject: str, algorithm: DekAlgorithm = DekAlgorithm.AES256_GCM,
+        version: int = 1, deleted: bool = False) -> Dek:
         """
         Get a Data Encryption Key (DEK) from the DEK Registry.
 

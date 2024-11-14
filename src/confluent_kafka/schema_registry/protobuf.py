@@ -315,6 +315,7 @@ class ProtobufSerializer(BaseSerializer):
         msg_type: GeneratedProtocolMessageType,
         schema_registry_client: SchemaRegistryClient,
         conf: dict = None,
+        rule_conf: dict = None,
         rule_registry: RuleRegistry = None):
         super().__init__()
 
@@ -389,6 +390,9 @@ class ProtobufSerializer(BaseSerializer):
         self._index_array = _create_index_array(descriptor)
         self._schema = Schema(_schema_to_str(descriptor.file),
                               schema_type='PROTOBUF')
+
+        for rule in self._rule_registry.get_executors():
+            rule.configure(conf, rule_conf)
 
     @staticmethod
     def _write_varint(buf: io.BytesIO, val: int, zigzag: bool = True):
@@ -789,7 +793,7 @@ class ProtobufDeserializer(BaseDeserializer):
                 except DecodeError as e:
                     raise SerializationError(str(e))
 
-                obj_dict = json_format.MessageToDict(msg, always_print_fields_with_no_presence=True)
+                obj_dict = json_format.MessageToDict(msg, including_default_value_fields=True)
                 obj_dict = self._execute_migrations(ctx, subject, migrations, obj_dict)
                 msg = GetMessageClass(reader_desc)()
                 msg = json_format.ParseDict(obj_dict, msg)
@@ -852,8 +856,7 @@ def transform(ctx: RuleContext, descriptor: Descriptor, message: Any,
     field_ctx = ctx.current_field()
     if field_ctx is not None:
         rule_tags = ctx.rule.tags
-        if (rule_tags is None or len(rule_tags) == 0 or
-            not _disjoint(set(rule_tags), field_ctx.tags)):
+        if not rule_tags or not _disjoint(set(rule_tags), field_ctx.tags):
             field_transform(ctx, field_ctx, message)
     return message
 

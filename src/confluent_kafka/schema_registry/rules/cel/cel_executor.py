@@ -12,10 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import celpy  # type: ignore
+import celpy
 
 from threading import Lock
 from typing import Any, Optional
+
+from celpy.celtypes import BoolType
 
 from confluent_kafka.schema_registry import RuleKind, Schema
 from confluent_kafka.schema_registry.rule_registry import RuleRegistry
@@ -66,8 +68,8 @@ class CelExecutor(RuleExecutor):
             prog = self._env.program(ast, functions=self._funcs)
             self._cache.set(expr, script_type, schema, prog)
         result = prog.evaluate(args)
-        if isinstance(result, celpy.BoolType):
-            return bool(result.value)
+        if isinstance(result, BoolType):
+            return bool(result)
         return result
 
     @staticmethod

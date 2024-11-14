@@ -30,6 +30,7 @@ __all__ = ['BaseSerializer',
            'RuleError',
            'RuleExecutor']
 
+import abc
 import logging
 from enum import Enum
 from threading import Lock
@@ -156,25 +157,28 @@ FieldTransform = Callable[[RuleContext, FieldContext, Any], Any]
 FieldTransformer = Callable[[RuleContext, FieldTransform, Any], Any]
 
 
-class RuleBase(object):
+class RuleBase(metaclass=abc.ABCMeta):
     def configure(self, client_conf: dict, rule_conf: dict):
         pass
 
+    @abc.abstractmethod
     def type(self) -> str:
-        raise NotImplementedError
+        raise NotImplementedError()
 
     def close(self):
         pass
 
 
 class RuleExecutor(RuleBase):
+    @abc.abstractmethod
     def transform(self, ctx: RuleContext, message: Any) -> Any:
-        raise NotImplementedError
+        raise NotImplementedError()
 
 
 class FieldRuleExecutor(RuleExecutor):
+    @abc.abstractmethod
     def new_transform(self, ctx: RuleContext) -> FieldTransform:
-        raise NotImplementedError
+        raise NotImplementedError()
 
     def transform(self, ctx: RuleContext, message: Any) -> Any:
         # TODO preserve source
@@ -203,8 +207,9 @@ class FieldRuleExecutor(RuleExecutor):
 
 
 class RuleAction(RuleBase):
+    @abc.abstractmethod
     def run(self, ctx: RuleContext, message: Any, ex: Optional[Exception]):
-       raise NotImplementedError
+       raise NotImplementedError()
 
 
 class ErrorAction(RuleAction):

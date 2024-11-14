@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import jsonata  # type: ignore
+import jsonata
 
 from typing import Optional, Any
 

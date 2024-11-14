@@ -198,6 +198,7 @@ class JSONSerializer(BaseSerializer):
         schema_registry_client: SchemaRegistryClient,
         to_dict: Callable[[object, SerializationContext], dict] = None,
         conf: dict = None,
+        rule_conf: dict = None,
         rule_registry: RuleRegistry = None):
         super().__init__()
         if isinstance(schema_str, str):
@@ -257,6 +258,9 @@ class JSONSerializer(BaseSerializer):
         self._schema_name = schema_name
         self._parsed_schema = schema_dict
         self._named_schemas = named_schemas
+
+        for rule in self._rule_registry.get_executors():
+            rule.configure(conf, rule_conf)
 
     def __call__(self, obj: object, ctx: SerializationContext = None) -> Optional[bytes]:
         """
@@ -571,8 +575,7 @@ def transform(ctx: RuleContext, schema: JsonSchema, named_schemas: Dict[str, Jso
     if schema_type in (FieldType.ENUM, FieldType.STRING, FieldType.INT, FieldType.DOUBLE, FieldType.BOOLEAN):
         if field_ctx is not None:
             rule_tags = ctx.rule.tags
-            if (rule_tags is None or len(rule_tags) == 0 or
-                not _disjoint(set(rule_tags), field_ctx.tags)):
+            if not rule_tags or not _disjoint(set(rule_tags), field_ctx.tags):
                 return field_transform(ctx, field_ctx, message)
     return message
 
@@ -620,7 +623,7 @@ def get_type(schema: JsonSchema) -> FieldType:
         return FieldType.ENUM
     if schema_type == "object":
         props = schema.get("properties")
-        if props is None or len(props) == 0:
+        if not props:
             return FieldType.MAP
         return FieldType.RECORD
     if schema_type == "array":

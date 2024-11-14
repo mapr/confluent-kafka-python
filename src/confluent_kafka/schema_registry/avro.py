@@ -428,6 +428,7 @@ class AvroDeserializer(BaseDeserializer):
         from_dict: Callable[[dict, SerializationContext], object] = None,
         return_record_name: bool = False,
         conf: dict = None,
+        rule_conf: dict = None,
         rule_registry: RuleRegistry = None):
         super().__init__()
         schema = None
@@ -478,6 +479,9 @@ class AvroDeserializer(BaseDeserializer):
         self._return_record_name = return_record_name
         if not isinstance(self._return_record_name, bool):
             raise ValueError("return_record_name must be a boolean value")
+
+        for rule in self._rule_registry.get_executors():
+            rule.configure(conf, rule_conf)
 
     def __call__(self, data: bytes, ctx: SerializationContext = None) -> Union[dict, object, None]:
         """
@@ -601,8 +605,7 @@ def transform(ctx: RuleContext, schema: AvroSchema, message: AvroMessage,
 
     if field_ctx is not None:
         rule_tags = ctx.rule.tags
-        if (rule_tags is None or len(rule_tags) == 0 or
-            not _disjoint(set(rule_tags), field_ctx.tags)):
+        if not rule_tags or not _disjoint(set(rule_tags), field_ctx.tags):
             return field_transform(ctx, field_ctx, message)
     return message
 
