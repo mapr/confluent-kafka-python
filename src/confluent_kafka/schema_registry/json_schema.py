@@ -207,7 +207,7 @@ class JSONSerializer(BaseSerializer):
             self._schema = schema_str
 
         self._registry = schema_registry_client
-        self._rule_registry = rule_registry
+        self._rule_registry = rule_registry if rule_registry else RuleRegistry()
         self._schema_id = None
         self._known_subjects = set()
         self._parsed_schemas = ParsedSchemaCache()
@@ -326,7 +326,7 @@ class JSONSerializer(BaseSerializer):
             field_transformer = lambda rule_ctx, msg, field_transform: (
                 transform(rule_ctx, parsed_schema, named_schemas, "$", msg, field_transform))
             value = self._execute_rules(ctx, subject, RuleMode.WRITE, None,
-                                        latest_schema, value, None,
+                                        latest_schema.schema, value, None,
                                         field_transformer)
 
         with _ContextStringIO() as fo:
@@ -406,7 +406,7 @@ class JSONDeserializer(BaseDeserializer):
         self._parsed_schema, self._named_schemas = self._get_parsed_schema(schema)
         self._schema = schema
         self._registry = schema_registry_client
-        self._rule_registry = rule_registry
+        self._rule_registry = rule_registry if rule_registry else RuleRegistry()
         self._parsed_schemas = ParsedSchemaCache()
 
         conf_copy = self._default_conf.copy()
@@ -491,10 +491,11 @@ class JSONDeserializer(BaseDeserializer):
                 reader_schema_raw = latest_schema
                 reader_schema, reader_named_schemas = self._get_parsed_schema(latest_schema.schema)
             else:
+                migrations = None
                 reader_schema_raw = writer_schema_raw
                 reader_schema, reader_named_schemas = writer_schema, writer_named_schemas
 
-            if len(migrations) > 0:
+            if migrations:
                 obj_dict = self._execute_migrations(ctx, subject, migrations, obj_dict)
 
             field_transformer = lambda rule_ctx, message, field_transform: (

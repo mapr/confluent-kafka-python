@@ -272,23 +272,23 @@ class BaseSerde(object):
 
     def _execute_rules(self, ser_ctx: SerializationContext, subject: str,
         rule_mode: RuleMode,
-        source: Optional[RegisteredSchema], target: Optional[RegisteredSchema],
+        source: Optional[Schema], target: Optional[Schema],
         message: Any, inline_tags: Optional[Dict[str, Set[str]]],
         field_transformer: Optional[FieldTransformer]) -> Any:
         if message is None or target is None:
             return None
         rules: Optional[List[Rule]] = None
         if rule_mode == RuleMode.UPGRADE:
-            if target.schema.rule_set is not None:
-                rules = target.schema.rule_set.migration_rules
+            if target.rule_set is not None:
+                rules = target.rule_set.migration_rules
         elif rule_mode == RuleMode.DOWNGRADE:
-            if source.schema.rule_set is not None:
-                rules = source.schema.rule_set.migration_rules
+            if source.rule_set is not None:
+                rules = source.rule_set.migration_rules
                 if rules is not None:
                     rules = rules[:].reverse()
         else:
-            if target.schema.rule_set is not None:
-                rules = target.schema.rule_set.domain_rules
+            if target.rule_set is not None:
+                rules = target.rule_set.domain_rules
                 if rule_mode == RuleMode.READ:
                     # Execute read rules in reverse order for symmetry
                     rules = rules[:].reverse()
@@ -443,8 +443,8 @@ class BaseDeserializer(BaseSerde, Deserializer):
         migrations: List[Migration], message: Any) -> Any:
         for migration in migrations:
             message = self._execute_rules(ser_ctx, subject, migration.rule_mode,
-                                          migration.source, migration.target, message,
-                                          None, None)
+                                          migration.source.schema, migration.target.schema,
+                                          message, None, None)
         return message
 
 

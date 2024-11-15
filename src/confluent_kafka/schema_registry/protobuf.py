@@ -380,7 +380,7 @@ class ProtobufSerializer(BaseSerializer):
                              .format(", ".join(conf_copy.keys())))
 
         self._registry = schema_registry_client
-        self._rule_registry = rule_registry
+        self._rule_registry = rule_registry if rule_registry else RuleRegistry()
         self._schema_id = None
         self._known_subjects = set()
         self._msg_class = msg_type
@@ -521,7 +521,7 @@ class ProtobufSerializer(BaseSerializer):
             field_transformer = lambda rule_ctx, msg, field_transform: (
                 transform(rule_ctx, desc, msg, field_transform))
             message = self._execute_rules(ctx, subject, RuleMode.WRITE, None,
-                                          latest_schema, message, None,
+                                          latest_schema.schema, message, None,
                                           field_transformer)
 
         with _ContextStringIO() as fo:
@@ -597,7 +597,7 @@ class ProtobufDeserializer(BaseDeserializer):
         super().__init__()
 
         self._registry = schema_registry_client
-        self._rule_registry = rule_registry
+        self._rule_registry = rule_registry if rule_registry else RuleRegistry()
         self._parsed_schemas = ParsedSchemaCache()
 
         # Require use.deprecated.format to be explicitly configured
@@ -781,12 +781,13 @@ class ProtobufDeserializer(BaseDeserializer):
                 reader_schema_raw = latest_schema
                 reader_schema = self._get_parsed_schema(latest_schema.schema)
             else:
+                migrations = None
                 reader_schema_raw = writer_schema_raw
                 reader_schema = writer_schema
 
             reader_desc = reader_schema.message_types_by_name[writer_desc.full_name]
 
-            if len(migrations) > 0:
+            if migrations:
                 msg = GetMessageClass(writer_desc)()
                 try:
                     msg.ParseFromString(payload.read())

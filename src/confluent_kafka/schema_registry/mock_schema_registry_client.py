@@ -48,7 +48,8 @@ class _SchemaStore(object):
 
     def get_schema(self, schema_id: int) -> Optional[Schema]:
         with self.lock:
-            return self.schema_id_index.get(schema_id, None)
+            rs = self.schema_id_index.get(schema_id, None)
+            return rs.schema if rs else None
 
     def get_schema_id_by_subject(self, subject: str, schema: Schema) -> Optional[int]:
         with self.lock:

@@ -33,7 +33,6 @@ from requests import (Session,
 
 from .error import SchemaRegistryError
 
-
 # TODO: consider adding `six` dependency or employing a compat file
 # Python 2.7 is officially EOL so compatibility issue will be come more the norm.
 # We need a better way to handle these issues.
@@ -79,7 +78,7 @@ class _RestClient(object):
         if not isinstance(base_url, string_type):
             raise TypeError("url must be an instance of str, not "
                             + str(type(base_url)))
-        if not base_url.startswith('http'):
+        if not base_url.startswith('http') and not base_url.startswith('mock'):
             raise ValueError("Invalid url {}".format(base_url))
         self.base_url = base_url.rstrip('/')
 
@@ -868,6 +867,14 @@ class SchemaRegistryClient(object):
         self._latest_with_metadata_cache.clear()
         self._cache.clear()
         self._metadata_cache.clear()
+
+    @staticmethod
+    def new_client(conf: dict) -> 'SchemaRegistryClient':
+        from .mock_schema_registry_client import MockSchemaRegistryClient
+        url = conf.get("url")
+        if url.startswith("mock://"):
+            return MockSchemaRegistryClient(conf)
+        return SchemaRegistryClient(conf)
 
 
 T = TypeVar("T")

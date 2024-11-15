@@ -231,7 +231,7 @@ class AvroSerializer(BaseSerializer):
 
         self._registry = schema_registry_client
         self._schema_id = None
-        self._rule_registry = rule_registry
+        self._rule_registry = rule_registry if rule_registry else RuleRegistry()
         self._known_subjects = set()
         self._parsed_schemas = ParsedSchemaCache()
 
@@ -352,7 +352,7 @@ class AvroSerializer(BaseSerializer):
                 transform(rule_ctx, parsed_schema, msg, field_transform))
             value = self._execute_rules(ctx, subject, RuleMode.WRITE, None,
                                         # TODO RAY - check if we need to get inline tags from named_schemas
-                                        latest_schema, value, get_inline_tags(parsed_schema),
+                                        latest_schema.schema, value, get_inline_tags(parsed_schema),
                                         field_transformer)
         else:
             parsed_schema = self._parsed_schema
@@ -442,7 +442,7 @@ class AvroDeserializer(BaseDeserializer):
 
         self._schema = schema
         self._registry = schema_registry_client
-        self._rule_registry = rule_registry
+        self._rule_registry = rule_registry if rule_registry else RuleRegistry()
         self._parsed_schemas = ParsedSchemaCache()
 
         conf_copy = self._default_conf.copy()
@@ -536,10 +536,11 @@ class AvroDeserializer(BaseDeserializer):
                 reader_schema_raw = latest_schema
                 reader_schema = self._get_parsed_schema(latest_schema.schema)
             else:
+                migrations = None
                 reader_schema_raw = writer_schema_raw
                 reader_schema = writer_schema
 
-            if len(migrations) > 0:
+            if migrations:
                 obj_dict = schemaless_reader(payload,
                                              writer_schema,
                                              None,
