@@ -31,10 +31,8 @@ from confluent_kafka.schema_registry.rules.encryption.kms_driver_registry import
 from confluent_kafka.schema_registry.serde import RuleContext, \
     FieldRuleExecutor, FieldTransform, RuleError, FieldContext, FieldType
 
-
 aead.register()
 daead.register()
-
 
 ENCRYPT_KEK_NAME = "encrypt.kek.name"
 ENCRYPT_KMS_KEY_ID = "encrypt.kms.key.id"
@@ -82,24 +80,7 @@ class FieldEncryptionExecutor(FieldRuleExecutor):
         dek_algorithm_str = ctx.get_parameter(ENCRYPT_DEK_ALGORITHM)
         if dek_algorithm_str is not None:
             dek_algorithm = DekFormat[dek_algorithm_str]
-        if dek_algorithm is DekFormat.AES128_GCM:
-            key_template = aead.aead_key_templates.AES128_GCM_RAW
-        elif dek_algorithm is DekFormat.AES256_GCM:
-            key_template = aead.aead_key_templates.AES256_GCM_RAW
-        elif dek_algorithm is DekFormat.AES256_SIV:
-            # Construct AES256_SIV_RAW since it doesn't exist in Tink
-            key_format = aes_siv_pb2.AesSivKeyFormat(
-                # Generate 2 256-bit keys
-                key_size = 64,
-            )
-            key_template = tink_pb2.KeyTemplate(
-                type_url = daead.deterministic_aead_key_templates.AES256_SIV.type_url,
-                output_prefix_type=tink_pb2.RAW,
-                value=key_format.SerializeToString(),
-            )
-        else:
-            raise RuleError("invalid dek algorithm")
-        cryptor = Cryptor(dek_algorithm, key_template)
+        cryptor = Cryptor(dek_algorithm)
         return cryptor
 
     def _get_kek_name(self, ctx: RuleContext) -> str:
@@ -122,25 +103,42 @@ class FieldEncryptionExecutor(FieldRuleExecutor):
             raise RuleError("negative expiry days")
         return dek_expiry_days
 
-    @staticmethod
-    def register():
+    @classmethod
+    def register(cls):
         RuleRegistry.register_rule_executor(FieldEncryptionExecutor())
 
 
 class Cryptor:
     EMPTY_AAD = b""
 
-    def __init__(self, dek_format: DekFormat, key_template: tink_pb2.KeyTemplate):
+    def __init__(self, dek_format: DekFormat):
         self.dek_format = dek_format
-        self.key_template = key_template
         self.is_deterministic = dek_format == DekFormat.AES256_SIV
         self.registry = Registry()
+
+        if dek_format is DekFormat.AES128_GCM:
+            self.key_template = aead.aead_key_templates.AES128_GCM_RAW
+        elif dek_format is DekFormat.AES256_GCM:
+            self.key_template = aead.aead_key_templates.AES256_GCM_RAW
+        elif dek_format is DekFormat.AES256_SIV:
+            # Construct AES256_SIV_RAW since it doesn't exist in Tink
+            key_format = aes_siv_pb2.AesSivKeyFormat(
+                # Generate 2 256-bit keys
+                key_size = 64,
+            )
+            self.key_template = tink_pb2.KeyTemplate(
+                type_url = daead.deterministic_aead_key_templates.AES256_SIV.type_url,
+                output_prefix_type=tink_pb2.RAW,
+                value=key_format.SerializeToString(),
+            )
+        else:
+            raise RuleError("invalid dek algorithm")
 
     def generate_key(self) -> bytes:
         key_data = self.registry.new_key_data(self.key_template)
         return key_data.value
 
-    def encrypt(self, dek: bytes, associated_data: bytes) -> bytes:
+    def encrypt(self, dek: bytes, plaintext: bytes, associated_data: bytes) -> bytes:
         key_data = tink_pb2.KeyData(
             type_url = self.key_template.type_url,
             value = dek,
@@ -148,12 +146,12 @@ class Cryptor:
         )
         if self.is_deterministic:
             primitive = self.registry.primitive(key_data, daead.DeterministicAead)
-            return primitive.encrypt_deterministically(key_data, associated_data)
+            return primitive.encrypt_deterministically(plaintext, associated_data)
         else:
-            primitive = self.registry.primitive(dek, aead.Aead)
-            return primitive.encrypt(dek, associated_data)
+            primitive = self.registry.primitive(key_data, aead.Aead)
+            return primitive.encrypt(plaintext, associated_data)
 
-    def decrypt(self, dek: bytes, associated_data: bytes) -> bytes:
+    def decrypt(self, dek: bytes, ciphertext: bytes, associated_data: bytes) -> bytes:
         key_data = tink_pb2.KeyData(
             type_url = self.key_template.type_url,
             value = dek,
@@ -161,10 +159,10 @@ class Cryptor:
         )
         if self.is_deterministic:
             primitive = self.registry.primitive(key_data, daead.DeterministicAead)
-            return primitive.encrypt_deterministically(key_data, associated_data)
+            return primitive.decrypt_deterministically(ciphertext, associated_data)
         else:
-            primitive = self.registry.primitive(dek, aead.Aead)
-            return primitive.encrypt(dek, associated_data)
+            primitive = self.registry.primitive(key_data, aead.Aead)
+            return primitive.decrypt(ciphertext, associated_data)
 
 
 class FieldEncryptionExecutorTransform(FieldTransform):

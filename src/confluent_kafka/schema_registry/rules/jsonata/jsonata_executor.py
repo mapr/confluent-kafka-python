@@ -37,8 +37,8 @@ class JsonataExecutor(RuleExecutor):
             self._cache.set(ctx.rule.expr, jsonata)
         return expr.evaluate(message)
 
-    @staticmethod
-    def register():
+    @classmethod
+    def register(cls):
         RuleRegistry.register_rule_executor(JsonataExecutor())
 
 

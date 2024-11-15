@@ -1,0 +1,69 @@
+# Copyright 2024 Confluent Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import os
+from typing import Optional
+
+import tink
+from tink import KmsClient, prf, aead
+from tink.core import Registry
+from tink.proto import common_pb2, tink_pb2, hkdf_prf_pb2
+
+
+class LocalKmsClient(KmsClient):
+    def __init__(self, secret: Optional[str] = None):
+        if secret is None:
+            secret = os.getenv("LOCAL_SECRET")
+        if secret is None:
+            raise tink.TinkError("cannot load secret")
+        self._aead = self._get_primitive(secret)
+
+    def _get_primitive(self, secret: str) -> aead.Aead:
+        key_template = aead.aead_key_templates.AES128_GCM_RAW
+        key = self._get_key(secret)
+        key_data = tink_pb2.KeyData(
+            type_url = key_template.type_url,
+            value = key,
+            key_material = tink_pb2.KeyData.SYMMETRIC
+        )
+        return Registry().primitive(key_data, aead.Aead)
+
+    def _get_key(self, secret: str) -> bytes:
+        key = secret.encode("utf-8")
+        template = _create_hkdf_key_template(len(key), common_pb2.HashType.SHA256)
+        keyset_handle = tink.new_keyset_handle(template)
+        primitive = keyset_handle.primitive(prf.PrfSet)
+        return primitive.primary().compute(key, output_length=16)
+
+    def does_support(self, key_uri: str) -> bool:
+        return key_uri.startswith("local-kms://")
+
+    def get_aead(self, key_uri: str) -> aead.Aead:
+        return self._aead
+
+
+_HKDF_PRF_KEY_TYPE_URL = 'type.googleapis.com/google.crypto.tink.HkdfPrfKey'
+
+def _create_hkdf_key_template(
+    key_size: int, hash_type: common_pb2.HashType) -> tink_pb2.KeyTemplate:
+    """Creates an HKDF PRF KeyTemplate, and fills in its values."""
+    key_format = hkdf_prf_pb2.HkdfPrfKeyFormat()
+    key_format.params.hash = hash_type
+    key_format.key_size = key_size
+    key_format.version = 0
+    key_template = tink_pb2.KeyTemplate()
+    key_template.value = key_format.SerializeToString()
+    key_template.type_url = _HKDF_PRF_KEY_TYPE_URL
+    key_template.output_prefix_type = tink_pb2.RAW
+    return key_template

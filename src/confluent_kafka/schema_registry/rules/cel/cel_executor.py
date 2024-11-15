@@ -72,8 +72,8 @@ class CelExecutor(RuleExecutor):
             return bool(result)
         return result
 
-    @staticmethod
-    def register():
+    @classmethod
+    def register(cls):
         RuleRegistry.register_rule_executor(CelExecutor())
         RuleRegistry.register_rule_executor(CelFieldExecutor())
 

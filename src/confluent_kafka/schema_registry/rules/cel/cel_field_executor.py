@@ -53,6 +53,6 @@ class CelFieldExecutor(FieldRuleExecutor):
         }
         return self._executor.execute(ctx, field_value, args)
 
-    @staticmethod
-    def register():
+    @classmethod
+    def register(cls):
         RuleRegistry.register_rule_executor(CelFieldExecutor())
