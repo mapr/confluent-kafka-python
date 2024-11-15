@@ -60,10 +60,9 @@ class _SchemaStore(object):
     def get_registered_schema_by_schema(self, subject: str,
         schema: Schema) -> Optional[RegisteredSchema]:
         with self.lock:
-            if schema in self.subject_schemas[subject]:
-                for rs in self.subject_schemas[subject]:
-                    if rs.schema == schema:
-                        return rs
+            for rs in self.subject_schemas[subject]:
+                if rs.schema == schema:
+                    return rs
             return None
 
     def get_version(self, subject_name: str, version: int) -> Optional[RegisteredSchema]:

@@ -488,7 +488,7 @@ class JSONDeserializer(BaseDeserializer):
 
             if latest_schema is not None:
                 migrations = self._get_migrations(subject, writer_schema_raw, latest_schema, None)
-                reader_schema_raw = latest_schema
+                reader_schema_raw = latest_schema.schema
                 reader_schema, reader_named_schemas = self._get_parsed_schema(latest_schema.schema)
             else:
                 migrations = None

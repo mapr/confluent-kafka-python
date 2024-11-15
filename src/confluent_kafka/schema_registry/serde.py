@@ -396,8 +396,7 @@ class BaseDeserializer(BaseSerde, Deserializer):
 
     def _get_migrations(self, subject: str, source_info: Schema,
         target: RegisteredSchema, fmt: Optional[str]) -> List[Migration]:
-        version = self._registry.lookup_schema(subject, source_info)
-        source = RegisteredSchema(0, source_info, subject, version)
+        source = self._registry.lookup_schema(subject, source_info)
         migrations = []
         if source.version < target.version:
             migration_mode = RuleMode.UPGRADE
