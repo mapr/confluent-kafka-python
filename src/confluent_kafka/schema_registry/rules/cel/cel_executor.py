@@ -21,13 +21,13 @@ from celpy.celtypes import BoolType
 
 from confluent_kafka.schema_registry import RuleKind, Schema
 from confluent_kafka.schema_registry.rule_registry import RuleRegistry
-from confluent_kafka.schema_registry.rules.cel.cel_field_executor import \
-    CelFieldExecutor
 from confluent_kafka.schema_registry.rules.cel.cel_field_presence import \
     InterpretedRunner
 from confluent_kafka.schema_registry.rules.cel.constraints import _msg_to_cel
 from confluent_kafka.schema_registry.rules.cel.extra_func import EXTRA_FUNCS
 from confluent_kafka.schema_registry.serde import RuleExecutor, RuleContext
+
+from google.protobuf import message
 
 
 class CelExecutor(RuleExecutor):
@@ -40,11 +40,11 @@ class CelExecutor(RuleExecutor):
     def type(self) -> str:
         return "CEL"
 
-    def transform(self, ctx: RuleContext, message: Any) -> Any:
-        args = { "message": _msg_to_cel(message) }
-        return self.execute(ctx, message, args)
+    def transform(self, ctx: RuleContext, msg: Any) -> Any:
+        args = { "message": _msg_to_cel(msg) }
+        return self.execute(ctx, msg, args)
 
-    def execute(self, ctx: RuleContext, message: Any, args: Any) -> Any:
+    def execute(self, ctx: RuleContext, msg: Any, args: Any) -> Any:
         expr = ctx.rule.expr
         index = expr.index(";")
         if index >= 0:
@@ -54,7 +54,7 @@ class CelExecutor(RuleExecutor):
                 if not guard_result:
                     if ctx.rule.kind == RuleKind.CONDITION:
                         return True
-                    return message
+                    return msg
             expr = expr[index+1:]
 
         return self.execute_rule(ctx, expr, args)
@@ -75,7 +75,6 @@ class CelExecutor(RuleExecutor):
     @classmethod
     def register(cls):
         RuleRegistry.register_rule_executor(CelExecutor())
-        RuleRegistry.register_rule_executor(CelFieldExecutor())
 
 
 class _CelCache(object):

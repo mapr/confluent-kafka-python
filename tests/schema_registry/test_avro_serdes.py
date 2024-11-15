@@ -20,10 +20,36 @@ import json
 import pytest
 
 from confluent_kafka.schema_registry import SchemaRegistryClient, \
-    SchemaReference, Schema
+    Schema
 from confluent_kafka.schema_registry.avro import AvroSerializer, \
     AvroDeserializer
+from confluent_kafka.schema_registry.rules.cel.cel_executor import CelExecutor
+from confluent_kafka.schema_registry.rules.cel.cel_field_executor import \
+    CelFieldExecutor
+from confluent_kafka.schema_registry.rules.encryption.awskms.aws_driver import \
+    AwsKmsDriver
+from confluent_kafka.schema_registry.rules.encryption.azurekms.azure_driver import \
+    AzureKmsDriver
+from confluent_kafka.schema_registry.rules.encryption.encrypt_executor import \
+    FieldEncryptionExecutor
+from confluent_kafka.schema_registry.rules.encryption.gcpkms.gcp_driver import \
+    GcpKmsDriver
+from confluent_kafka.schema_registry.rules.encryption.hcvault.hcvault_driver import \
+    HcVaultKmsDriver
+from confluent_kafka.schema_registry.rules.encryption.localkms.local_driver import \
+    LocalKmsDriver
+from confluent_kafka.schema_registry.schema_registry_client import RuleSet, \
+    Rule, RuleKind, RuleMode
 from confluent_kafka.serialization import SerializationContext, MessageField
+
+CelExecutor.register()
+CelFieldExecutor.register()
+FieldEncryptionExecutor.register()
+AwsKmsDriver.register()
+AzureKmsDriver.register()
+GcpKmsDriver.register()
+HcVaultKmsDriver.register()
+LocalKmsDriver.register()
 
 _BASE_URL = "mock://"
 _TOPIC = "topic1"
@@ -146,5 +172,56 @@ def test_avro_schema_evolution():
     assert obj2.get('newOptionalField') == 'optional'
 
 
+def test_avro_cel_condition():
+    conf = {'url': _BASE_URL}
+    client = SchemaRegistryClient.new_client(conf)
+    ser_conf = {'auto.register.schemas': False, 'use.latest.version': True}
+    obj = {
+        'intField': 123,
+        'doubleField': 45.67,
+        'stringField': 'hi',
+        'booleanField': True,
+        'bytesField': b'foobar',
+    }
+    schema = {
+        'type': 'record',
+        'name': 'test',
+        'fields': [
+            {'name': 'intField', 'type': 'int'},
+            {'name': 'doubleField', 'type': 'double'},
+            {'name': 'stringField', 'type': 'string'},
+            {'name': 'booleanField', 'type': 'boolean'},
+            {'name': 'bytesField', 'type': 'bytes'},
+        ]
+    }
+
+    rule = Rule(
+        "test-cel",
+        "",
+        RuleKind.CONDITION,
+        RuleMode.WRITE,
+        "CEL",
+        None,
+        None,
+        "message.stringField == 'hi'",
+        None,
+        None,
+        False
+    )
+    client.register_schema(_SUBJECT, Schema(
+        json.dumps(schema),
+        "AVRO",
+        [],
+        None,
+        RuleSet(None, [rule])
+    ))
+
+    ser = AvroSerializer(client, schema_str=None, conf=ser_conf)
+    ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
+    bytes = ser(obj, ser_ctx)
+
+    deser = AvroDeserializer(client)
+    obj2 = deser(bytes, ser_ctx)
+    assert obj == obj2
 
 

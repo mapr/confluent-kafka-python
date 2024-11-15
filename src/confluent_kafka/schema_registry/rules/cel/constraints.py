@@ -19,8 +19,6 @@ import celpy  # type: ignore
 from celpy import celtypes  # type: ignore
 from google.protobuf import descriptor, message, message_factory
 
-from buf.validate import validate_pb2  # type: ignore
-
 from confluent_kafka.schema_registry.rules.cel import string_format
 from confluent_kafka.schema_registry.rules.cel.cel_field_presence import in_has
 

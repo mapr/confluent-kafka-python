@@ -380,7 +380,7 @@ class ProtobufSerializer(BaseSerializer):
                              .format(", ".join(conf_copy.keys())))
 
         self._registry = schema_registry_client
-        self._rule_registry = rule_registry if rule_registry else RuleRegistry()
+        self._rule_registry = rule_registry if rule_registry else RuleRegistry.get_global_instance()
         self._schema_id = None
         self._known_subjects = set()
         self._msg_class = msg_type
@@ -392,7 +392,7 @@ class ProtobufSerializer(BaseSerializer):
                               schema_type='PROTOBUF')
 
         for rule in self._rule_registry.get_executors():
-            rule.configure(conf, rule_conf)
+            rule.configure(self._registry.config() if self._registry else None, rule_conf)
 
     @staticmethod
     def _write_varint(buf: io.BytesIO, val: int, zigzag: bool = True):
@@ -593,11 +593,12 @@ class ProtobufDeserializer(BaseDeserializer):
         message_type: Message,
         conf: dict = None,
         schema_registry_client: SchemaRegistryClient = None,
+        rule_conf: dict = None,
         rule_registry: RuleRegistry = None):
         super().__init__()
 
         self._registry = schema_registry_client
-        self._rule_registry = rule_registry if rule_registry else RuleRegistry()
+        self._rule_registry = rule_registry if rule_registry else RuleRegistry.get_global_instance()
         self._parsed_schemas = ParsedSchemaCache()
 
         # Require use.deprecated.format to be explicitly configured
@@ -643,6 +644,9 @@ class ProtobufDeserializer(BaseDeserializer):
         descriptor = message_type.DESCRIPTOR
         self._index_array = _create_index_array(descriptor)
         self._msg_class = GetMessageClass(descriptor)
+
+        for rule in self._rule_registry.get_executors():
+            rule.configure(self._registry.config() if self._registry else None, rule_conf)
 
     @staticmethod
     def _decode_varint(buf: io.BytesIO, zigzag: bool = True) -> int:

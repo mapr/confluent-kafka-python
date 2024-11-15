@@ -415,6 +415,7 @@ class SchemaRegistryClient(object):
     """  # noqa: E501
 
     def __init__(self, conf: dict):
+        self._conf = conf
         self._rest_client = _RestClient(conf)
         self._cache = _SchemaCache()
         self._metadata_cache = _RegisteredSchemaCache()
@@ -428,6 +429,9 @@ class SchemaRegistryClient(object):
     def __exit__(self, *args):
         if self._rest_client is not None:
             self._rest_client.close()
+
+    def config(self):
+        return self._conf
 
     def register_schema(self, subject_name: str, schema: 'Schema',
         normalize_schemas: bool = False) -> int:
@@ -1095,7 +1099,7 @@ class RuleSet:
         return rule_set
 
     def __hash__(self):
-        return hash(frozenset(self.migration_rules + self.domain_rules))
+        return hash(frozenset((self.migration_rules or []) + (self.domain_rules or [])))
 
 
 @_attrs_define

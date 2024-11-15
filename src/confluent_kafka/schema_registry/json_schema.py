@@ -207,7 +207,7 @@ class JSONSerializer(BaseSerializer):
             self._schema = schema_str
 
         self._registry = schema_registry_client
-        self._rule_registry = rule_registry if rule_registry else RuleRegistry()
+        self._rule_registry = rule_registry if rule_registry else RuleRegistry.get_global_instance()
         self._schema_id = None
         self._known_subjects = set()
         self._parsed_schemas = ParsedSchemaCache()
@@ -260,7 +260,7 @@ class JSONSerializer(BaseSerializer):
         self._named_schemas = named_schemas
 
         for rule in self._rule_registry.get_executors():
-            rule.configure(conf, rule_conf)
+            rule.configure(self._registry.config() if self._registry else None, rule_conf)
 
     def __call__(self, obj: object, ctx: SerializationContext = None) -> Optional[bytes]:
         """
@@ -385,6 +385,7 @@ class JSONDeserializer(BaseDeserializer):
         from_dict: Callable[[dict, SerializationContext], object] = None,
         schema_registry_client: SchemaRegistryClient  =None,
         conf: dict = None,
+        rule_conf: dict = None,
         rule_registry: RuleRegistry = None):
         super().__init__()
         if isinstance(schema_str, str):
@@ -406,7 +407,7 @@ class JSONDeserializer(BaseDeserializer):
         self._parsed_schema, self._named_schemas = self._get_parsed_schema(schema)
         self._schema = schema
         self._registry = schema_registry_client
-        self._rule_registry = rule_registry if rule_registry else RuleRegistry()
+        self._rule_registry = rule_registry if rule_registry else RuleRegistry.get_global_instance()
         self._parsed_schemas = ParsedSchemaCache()
 
         conf_copy = self._default_conf.copy()
@@ -435,6 +436,9 @@ class JSONDeserializer(BaseDeserializer):
                              " from_dict(dict, SerializationContext) -> object")
 
         self._from_dict = from_dict
+
+        for rule in self._rule_registry.get_executors():
+            rule.configure(self._registry.config() if self._registry else None, rule_conf)
 
     def __call__(self, data: bytes, ctx: SerializationContext = None) -> Union[dict, object, None]:
         """

@@ -220,6 +220,7 @@ class AvroSerializer(BaseSerializer):
         schema_str: Union[str, Schema, None] = None,
         to_dict: Callable[[object, SerializationContext], dict] = None,
         conf: dict = None,
+        rule_conf: dict = None,
         rule_registry: RuleRegistry = None):
         super().__init__()
         if isinstance(schema_str, str):
@@ -231,7 +232,7 @@ class AvroSerializer(BaseSerializer):
 
         self._registry = schema_registry_client
         self._schema_id = None
-        self._rule_registry = rule_registry if rule_registry else RuleRegistry()
+        self._rule_registry = rule_registry if rule_registry else RuleRegistry.get_global_instance()
         self._known_subjects = set()
         self._parsed_schemas = ParsedSchemaCache()
 
@@ -296,6 +297,9 @@ class AvroSerializer(BaseSerializer):
         self._schema = schema
         self._schema_name = schema_name
         self._parsed_schema = parsed_schema
+
+        for rule in self._rule_registry.get_executors():
+            rule.configure(self._registry.config() if self._registry else None, rule_conf)
 
     def __call__(self, obj: object, ctx: SerializationContext = None) -> Optional[bytes]:
         """
@@ -442,7 +446,7 @@ class AvroDeserializer(BaseDeserializer):
 
         self._schema = schema
         self._registry = schema_registry_client
-        self._rule_registry = rule_registry if rule_registry else RuleRegistry()
+        self._rule_registry = rule_registry if rule_registry else RuleRegistry.get_global_instance()
         self._parsed_schemas = ParsedSchemaCache()
 
         conf_copy = self._default_conf.copy()
@@ -481,7 +485,7 @@ class AvroDeserializer(BaseDeserializer):
             raise ValueError("return_record_name must be a boolean value")
 
         for rule in self._rule_registry.get_executors():
-            rule.configure(conf, rule_conf)
+            rule.configure(self._registry.config() if self._registry else None, rule_conf)
 
     def __call__(self, data: bytes, ctx: SerializationContext = None) -> Union[dict, object, None]:
         """
@@ -535,6 +539,10 @@ class AvroDeserializer(BaseDeserializer):
                 migrations = self._get_migrations(subject, writer_schema_raw, latest_schema, None)
                 reader_schema_raw = latest_schema.schema
                 reader_schema = self._get_parsed_schema(latest_schema.schema)
+            elif self._schema is not None:
+                migrations = None
+                reader_schema_raw = self._schema
+                reader_schema = self._reader_schema
             else:
                 migrations = None
                 reader_schema_raw = writer_schema_raw
