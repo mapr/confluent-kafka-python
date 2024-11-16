@@ -39,7 +39,7 @@ from confluent_kafka.schema_registry.rules.encryption.hcvault.hcvault_driver imp
 from confluent_kafka.schema_registry.rules.encryption.localkms.local_driver import \
     LocalKmsDriver
 from confluent_kafka.schema_registry.schema_registry_client import RuleSet, \
-    Rule, RuleKind, RuleMode
+    Rule, RuleKind, RuleMode, SchemaReference
 from confluent_kafka.serialization import SerializationContext, MessageField
 
 CelExecutor.register()
@@ -119,6 +119,52 @@ def test_avro_serialize_nested():
         ]
     }
     ser = AvroSerializer(client, schema_str=json.dumps(schema), conf=ser_conf)
+    ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
+    bytes = ser(obj, ser_ctx)
+
+    deser = AvroDeserializer(client)
+    obj2 = deser(bytes, ser_ctx)
+    assert obj == obj2
+
+
+def test_avro_serialize_references():
+    conf = {'url': _BASE_URL}
+    client = SchemaRegistryClient.new_client(conf)
+    ser_conf = {'auto.register.schemas': False, 'use.latest.version': True}
+
+    referenced = {
+        'intField': 123,
+        'doubleField': 45.67,
+        'stringField': 'hi',
+        'booleanField': True,
+        'bytesField': b'foobar',
+    }
+    obj = {
+        'refField': referenced
+    }
+    ref_schema = {
+        'type': 'record',
+        'name': 'test',
+        'fields': [
+            {'name': 'intField', 'type': 'int'},
+            {'name': 'doubleField', 'type': 'double'},
+            {'name': 'stringField', 'type': 'string'},
+            {'name': 'booleanField', 'type': 'boolean'},
+            {'name': 'bytesField', 'type': 'bytes'},
+        ]
+    }
+    client.register_schema('ref', Schema(json.dumps(ref_schema)))
+    schema = {
+        'type': 'record',
+        'name': 'test',
+        'fields': [
+            {'name': 'refField', 'type': 'ref'},
+        ]
+    }
+    refs = [SchemaReference('ref', 'ref', 1)]
+    client.register_schema(_SUBJECT, Schema(json.dumps(schema), 'AVRO', refs))
+
+    ser = AvroSerializer(client, schema_str=None, conf=ser_conf)
     ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
     bytes = ser(obj, ser_ctx)
 
