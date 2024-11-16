@@ -388,6 +388,29 @@ class AvroDeserializer(BaseDeserializer):
     Deserializer for Avro binary encoded data with Confluent Schema Registry
     framing.
 
+    +-----------------------------+----------+--------------------------------------------------+
+    | Property Name               | Type     | Description                                      |
+    +-----------------------------+----------+--------------------------------------------------+
+    |                             |          | Whether to use the latest subject version for    |
+    | ``use.latest.version``      | bool     | deserialization.                                   |
+    |                             |          |                                                  |
+    |                             |          | Defaults to False.                               |
+    +-----------------------------+----------+--------------------------------------------------+
+    |                             |          | Whether to use the latest subject version with   |
+    | ``use.latest.with.metadata``| bool     | the given metadata.                              |
+    |                             |          |                                                  |
+    |                             |          | Defaults to None.                                |
+    +-----------------------------+----------+--------------------------------------------------+
+    |                             |          | Callable(SerializationContext, str) -> str       |
+    |                             |          |                                                  |
+    | ``subject.name.strategy``   | callable | Defines how Schema Registry subject names are    |
+    |                             |          | constructed. Standard naming strategies are      |
+    |                             |          | defined in the confluent_kafka.schema_registry   |
+    |                             |          | namespace.                                       |
+    |                             |          |                                                  |
+    |                             |          | Defaults to topic_subject_name_strategy.         |
+    +-----------------------------+----------+--------------------------------------------------+
+
     Note:
         By default, Avro complex types are returned as dicts. This behavior can
         be overriden by registering a callable ``from_dict`` with the deserializer to

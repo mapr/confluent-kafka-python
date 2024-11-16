@@ -114,15 +114,15 @@ class JSONSerializer(BaseSerializer):
     |                             |          | being serialized.                                  |
     |                             |          |                                                    |
     |                             |          | Defaults to False.                                 |
-    +-----------------------------+----------+--------------------------------------------------+
-    |                             |          | Whether to use the latest subject version with   |
-    | ``use.latest.with.metadata``| bool     | the given metadata.                              |
-    |                             |          |                                                  |
-    |                             |          | WARNING: There is no check that the latest       |
-    |                             |          | schema is backwards compatible with the object   |
-    |                             |          | being serialized.                                |
-    |                             |          |                                                  |
-    |                             |          | Defaults to None.                                |
+    +-----------------------------+----------+----------------------------------------------------+
+    |                             |          | Whether to use the latest subject version with     |
+    | ``use.latest.with.metadata``| bool     | the given metadata.                                |
+    |                             |          |                                                    |
+    |                             |          | WARNING: There is no check that the latest         |
+    |                             |          | schema is backwards compatible with the object     |
+    |                             |          | being serialized.                                  |
+    |                             |          |                                                    |
+    |                             |          | Defaults to None.                                  |
     +-----------------------------+----------+----------------------------------------------------+
     |                             |          | Callable(SerializationContext, str) -> str         |
     |                             |          |                                                    |
@@ -132,6 +132,10 @@ class JSONSerializer(BaseSerializer):
     |                             |          | namespace.                                         |
     |                             |          |                                                    |
     |                             |          | Defaults to topic_subject_name_strategy.           |
+    +-----------------------------+----------+----------------------------------------------------+
+    |                             |          | Whether to validate the payload against the        |
+    | ``validate``                | bool     | the given schema.                                  |
+    |                             |          |                                                    |
     +-----------------------------+----------+----------------------------------------------------+
 
     Schemas are registered against subject names in Confluent Schema Registry that
@@ -185,13 +189,15 @@ class JSONSerializer(BaseSerializer):
         conf (dict): JsonSerializer configuration.
     """  # noqa: E501
     __slots__ = ['_known_subjects', '_parsed_schema', '_named_schemas',
-                 '_schema', '_schema_id', '_schema_name', '_to_dict', '_parsed_schemas']
+                 '_schema', '_schema_id', '_schema_name', '_to_dict',
+                 '_parsed_schemas', '_validate']
 
     _default_conf = {'auto.register.schemas': True,
                      'normalize.schemas': False,
                      'use.latest.version': False,
                      'use.latest.with.metadata': None,
-                     'subject.name.strategy': topic_subject_name_strategy}
+                     'subject.name.strategy': topic_subject_name_strategy,
+                     'validate': True}
 
     def __init__(self,
         schema_str: Union[str, Schema],
@@ -244,6 +250,10 @@ class JSONSerializer(BaseSerializer):
         self._subject_name_func = conf_copy.pop('subject.name.strategy')
         if not callable(self._subject_name_func):
             raise ValueError("subject.name.strategy must be callable")
+
+        self._validate = conf_copy.pop('validate')
+        if not isinstance(self._normalize_schemas, bool):
+            raise ValueError("validate must be a boolean value")
 
         if len(conf_copy) > 0:
             raise ValueError("Unrecognized properties: {}"
@@ -310,16 +320,17 @@ class JSONSerializer(BaseSerializer):
         else:
             value = obj
 
-        try:
-            if self._named_schemas:
-                validate(instance=value, schema=self._parsed_schema,
-                         resolver=RefResolver(self._parsed_schema.get('$id'),
-                                              self._parsed_schema,
-                                              store=self._named_schemas))
-            else:
-                validate(instance=value, schema=self._parsed_schema)
-        except ValidationError as ve:
-            raise SerializationError(ve.message)
+        if self._validate:
+            try:
+                if self._named_schemas:
+                    validate(instance=value, schema=self._parsed_schema,
+                             resolver=RefResolver(self._parsed_schema.get('$id'),
+                                                  self._parsed_schema,
+                                                  store=self._named_schemas))
+                else:
+                    validate(instance=value, schema=self._parsed_schema)
+            except ValidationError as ve:
+                raise SerializationError(ve.message)
 
         if latest_schema is not None:
             parsed_schema, named_schemas = self._get_parsed_schema(latest_schema.schema)
@@ -358,6 +369,36 @@ class JSONDeserializer(BaseDeserializer):
     Deserializer for JSON encoded data with Confluent Schema Registry
     framing.
 
+    Configuration properties:
+
+    +-----------------------------+----------+----------------------------------------------------+
+    | Property Name               | Type     | Description                                        |
+    +=============================+==========+====================================================+
+    +-----------------------------+----------+----------------------------------------------------+
+    |                             |          | Whether to use the latest subject version for      |
+    | ``use.latest.version``      | bool     | deserialization.                                   |
+    |                             |          |                                                    |
+    |                             |          | Defaults to False.                                 |
+    +-----------------------------+----------+----------------------------------------------------+
+    |                             |          | Whether to use the latest subject version with     |
+    | ``use.latest.with.metadata``| bool     | the given metadata.                                |
+    |                             |          |                                                    |
+    |                             |          | Defaults to None.                                  |
+    +-----------------------------+----------+----------------------------------------------------+
+    |                             |          | Callable(SerializationContext, str) -> str         |
+    |                             |          |                                                    |
+    | ``subject.name.strategy``   | callable | Defines how Schema Registry subject names are      |
+    |                             |          | constructed. Standard naming strategies are        |
+    |                             |          | defined in the confluent_kafka.schema_registry     |
+    |                             |          | namespace.                                         |
+    |                             |          |                                                    |
+    |                             |          | Defaults to topic_subject_name_strategy.           |
+    +-----------------------------+----------+----------------------------------------------------+
+    |                             |          | Whether to validate the payload against the        |
+    | ``validate``                | bool     | the given schema.                                  |
+    |                             |          |                                                    |
+    +-----------------------------+----------+----------------------------------------------------+
+
     Args:
         schema_str (str, Schema, optional):
             `JSON schema definition <https://json-schema.org/understanding-json-schema/reference/generic.html>`_
@@ -374,11 +415,12 @@ class JSONDeserializer(BaseDeserializer):
     """  # noqa: E501
 
     __slots__ = ['_parsed_schema', '_named_schemas', '_from_dict', '_schema',
-                 '_parsed_schemas']
+                 '_parsed_schemas', '_validate']
 
     _default_conf = {'use.latest.version': False,
                      'use.latest.with.metadata': None,
-                     'subject.name.strategy': topic_subject_name_strategy}
+                     'subject.name.strategy': topic_subject_name_strategy,
+                     'validate': True}
 
     def __init__(self,
         schema_str: Union[str, Schema],
@@ -426,6 +468,10 @@ class JSONDeserializer(BaseDeserializer):
         self._subject_name_func = conf_copy.pop('subject.name.strategy')
         if not callable(self._subject_name_func):
             raise ValueError("subject.name.strategy must be callable")
+
+        self._validate = conf_copy.pop('validate')
+        if not isinstance(self._normalize_schemas, bool):
+            raise ValueError("validate must be a boolean value")
 
         if len(conf_copy) > 0:
             raise ValueError("Unrecognized properties: {}"
@@ -508,16 +554,17 @@ class JSONDeserializer(BaseDeserializer):
                                            reader_schema_raw, obj_dict, None,
                                            field_transformer)
 
-            try:
-                if self._named_schemas:
-                    validate(instance=obj_dict, schema=self._parsed_schema,
-                             resolver=RefResolver(self._parsed_schema.get('$id'),
-                                                  self._parsed_schema,
-                                                  store=self._named_schemas))
-                else:
-                    validate(instance=obj_dict, schema=self._parsed_schema)
-            except ValidationError as ve:
-                raise SerializationError(ve.message)
+            if self._validate:
+                try:
+                    if self._named_schemas:
+                        validate(instance=obj_dict, schema=self._parsed_schema,
+                                 resolver=RefResolver(self._parsed_schema.get('$id'),
+                                                      self._parsed_schema,
+                                                      store=self._named_schemas))
+                    else:
+                        validate(instance=obj_dict, schema=self._parsed_schema)
+                except ValidationError as ve:
+                    raise SerializationError(ve.message)
 
             if self._from_dict is not None:
                 return self._from_dict(obj_dict, ctx)
