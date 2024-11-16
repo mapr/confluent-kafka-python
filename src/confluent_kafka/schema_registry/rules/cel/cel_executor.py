@@ -13,19 +13,20 @@
 # limitations under the License.
 
 import celpy
+from celpy import celtypes
 
 from threading import Lock
-from typing import Any, Optional
-
-from celpy.celtypes import BoolType
+from typing import Any, Optional, Dict, List
 
 from confluent_kafka.schema_registry import RuleKind, Schema
 from confluent_kafka.schema_registry.rule_registry import RuleRegistry
 from confluent_kafka.schema_registry.rules.cel.cel_field_presence import \
     InterpretedRunner
-from confluent_kafka.schema_registry.rules.cel.constraints import _msg_to_cel
+from confluent_kafka.schema_registry.rules.cel.constraints import _msg_to_cel, \
+    _scalar_field_value_to_cel
 from confluent_kafka.schema_registry.rules.cel.extra_func import EXTRA_FUNCS
-from confluent_kafka.schema_registry.serde import RuleExecutor, RuleContext
+from confluent_kafka.schema_registry.serde import RuleExecutor, RuleContext, \
+    FieldContext
 
 from google.protobuf import message
 
@@ -41,12 +42,15 @@ class CelExecutor(RuleExecutor):
         return "CEL"
 
     def transform(self, ctx: RuleContext, msg: Any) -> Any:
-        args = { "message": _msg_to_cel(msg) }
+        args = { "message": msg_to_cel(msg) }
         return self.execute(ctx, msg, args)
 
     def execute(self, ctx: RuleContext, msg: Any, args: Any) -> Any:
         expr = ctx.rule.expr
-        index = expr.index(";")
+        try:
+            index = expr.index(";")
+        except ValueError:
+            index = -1
         if index >= 0:
             guard = expr[:index]
             if len(guard.strip()) > 0:
@@ -60,15 +64,15 @@ class CelExecutor(RuleExecutor):
         return self.execute_rule(ctx, expr, args)
 
     def execute_rule(self, ctx: RuleContext, expr: str, args: Any) -> Any:
-        schema = ctx.target.schema
-        script_type = ctx.target.schema.schema_type
+        schema = ctx.target
+        script_type = ctx.target.schema_type
         prog = self._cache.get_program(expr, script_type, schema)
         if prog is None:
             ast = self._env.compile(expr)
             prog = self._env.program(ast, functions=self._funcs)
             self._cache.set(expr, script_type, schema, prog)
         result = prog.evaluate(args)
-        if isinstance(result, BoolType):
+        if isinstance(result, celtypes.BoolType):
             return bool(result)
         return result
 
@@ -93,3 +97,53 @@ class _CelCache(object):
     def clear(self):
         with self.lock:
             self.programs.clear()
+
+
+def msg_to_cel(msg: Any) -> Any:
+    if isinstance(msg, message.Message):
+        return _msg_to_cel(msg)
+    else:
+        return _value_to_cel(msg)
+
+
+def field_value_to_cel(field_ctx: FieldContext, field_value: Any) -> Any:
+    msg = field_ctx.containing_message
+    if isinstance(msg, message.Message):
+        desc = message.DESCRIPTOR
+        field_desc = desc.fields_by_name[field_ctx.name]
+        return _scalar_field_value_to_cel(field_value, field_desc)
+    else:
+        return _value_to_cel(field_value)
+
+
+def _value_to_cel(msg: Any) -> Any:
+    if isinstance(msg, dict):
+        return _dict_to_cel(msg)
+    elif isinstance(msg, list):
+        return _array_to_cel(msg)
+    elif isinstance(msg, str):
+        return celtypes.StringType(msg)
+    elif isinstance(msg, bytes):
+        return celtypes.BytesType(msg)
+    elif isinstance(msg, int):
+        return celtypes.IntType(msg)
+    elif isinstance(msg, float):
+        return celtypes.DoubleType(msg)
+    elif isinstance(msg, bool):
+        return celtypes.BoolType(msg)
+    else:
+        return msg
+
+
+def _dict_to_cel(val: dict) -> Dict[str, celtypes.Value]:
+    result = celtypes.MapType()
+    for key, val in val.items():
+        result[key] = _value_to_cel(val)
+    return result
+
+
+def _array_to_cel(val: list) -> List[celtypes.Value]:
+    result = celtypes.ListType()
+    for item in val:
+        result.append(_value_to_cel(item))
+    return result

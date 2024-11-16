@@ -217,7 +217,10 @@ class ErrorAction(RuleAction):
         return 'ERROR'
 
     def run(self, ctx: RuleContext, message: Any, ex: Optional[Exception]):
-        raise SerializationError(f"{ex}")
+        if ex is None:
+            raise SerializationError()
+        else:
+            raise SerializationError() from ex
 
 
 class NoneAction(RuleAction):
@@ -238,9 +241,9 @@ class RuleConditionError(RuleError):
 
     @staticmethod
     def error_message(rule: Rule) -> str:
-        if rule.doc is not None:
+        if rule.doc:
             return rule.doc
-        elif rule.expr is not None:
+        elif rule.expr:
             return f"Rule expr failed: {rule.expr}"
         else:
             return f"Rule failed: {rule.name}"

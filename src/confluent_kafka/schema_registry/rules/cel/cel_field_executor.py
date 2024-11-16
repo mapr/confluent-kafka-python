@@ -17,9 +17,8 @@ from typing import Any
 from celpy.celtypes import StringType
 
 from confluent_kafka.schema_registry.rule_registry import RuleRegistry
-from confluent_kafka.schema_registry.rules.cel.cel_executor import CelExecutor
-from confluent_kafka.schema_registry.rules.cel.constraints import _msg_to_cel, \
-    _scalar_field_value_to_cel
+from confluent_kafka.schema_registry.rules.cel.cel_executor import CelExecutor, \
+    msg_to_cel, field_value_to_cel
 from confluent_kafka.schema_registry.serde import RuleContext, \
     FieldRuleExecutor, FieldTransform, FieldContext
 
@@ -44,12 +43,12 @@ class CelFieldExecutor(FieldRuleExecutor):
         desc = message.DESCRIPTOR
         field_desc = desc.fields_by_name[field_ctx.name]
         args = {
-            "value": _scalar_field_value_to_cel(field_value, field_desc),
+            "value": field_value_to_cel(field_value, field_desc),
             "fullName": field_ctx.full_name,
             "name": field_ctx.name,
             "typeName": field_ctx.type_name(),
             "tags": [ StringType(tag) for tag in field_ctx.tags ],
-            "message": _msg_to_cel(field_value) ,
+            "message": msg_to_cel(field_value) ,
         }
         return self._executor.execute(ctx, field_value, args)
 
