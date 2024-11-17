@@ -126,7 +126,7 @@ class _RestClient(object):
             if not isinstance(proxies, dict):
                 raise TypeError("proxy details must be an instance of dict, not "
                                 + str(type(proxies)))
-        self.proxies = proxies
+        self.session.proxies = proxies
 
         # Any leftover keys are unknown to _RestClient
         if len(conf_copy) > 0:
