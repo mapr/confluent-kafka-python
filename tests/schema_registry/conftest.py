@@ -125,10 +125,6 @@ be used to verify the handling of in valid compatibility settings.
 
 @pytest.fixture()
 def mock_schema_registry():
-    COUNTER = {'DELETE': defaultdict(int),
-               'GET': defaultdict(int),
-               'POST': defaultdict(int),
-               'PUT': defaultdict(int)}
     with respx.mock as respx_mock:
         respx.route().mock(side_effect=_auth_matcher)
 
