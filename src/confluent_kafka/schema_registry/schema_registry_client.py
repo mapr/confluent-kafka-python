@@ -183,7 +183,7 @@ class _RestClient(object):
 
         response = self.session.request(
             method, url="/".join([self.base_url, url]),
-            headers=headers, data=body, params=query, proxies=self.proxies)
+            headers=headers, data=body, params=query)
 
         try:
             if 200 <= response.status_code <= 299:
