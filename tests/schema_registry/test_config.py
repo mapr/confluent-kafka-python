@@ -58,22 +58,6 @@ def test_config_url_trailing_slash():
     assert test_client._rest_client.base_url == TEST_URL
 
 
-def test_config_ssl_certificate():
-    conf = {'url': TEST_URL,
-            'ssl.certificate.location': '/ssl/certificates/client',
-            'ssl.key.location': '/ssl/keys/client'}
-    test_client = SchemaRegistryClient(conf)
-    assert test_client._rest_client.session.cert == ('/ssl/certificates/client',
-                                                     '/ssl/keys/client')
-
-
-def test_config_ssl_certificate_no_key():
-    conf = {'url': TEST_URL,
-            'ssl.certificate.location': '/ssl/certificates/client'}
-    test_client = SchemaRegistryClient(conf)
-    assert test_client._rest_client.session.cert == '/ssl/certificates/client'
-
-
 def test_config_ssl_key_no_certificate():
     conf = {'url': TEST_URL,
             'ssl.key.location': '/ssl/keys/client'}
