@@ -18,12 +18,13 @@ TEST_REQUIRES = [
     'pytest==4.6.4;python_version<"3.0"',
     'pytest;python_version>="3.0"',
     'pytest-timeout',
-    'flake8'
+    'flake8',
+    'respx'
 ]
 
 DOC_REQUIRES = ['sphinx', 'sphinx-rtd-theme']
 
-SCHEMA_REGISTRY_REQUIRES = ['requests', 'attrs', 'cachetools']
+SCHEMA_REGISTRY_REQUIRES = ['requests', 'attrs', 'cachetools', 'httpx']
 
 RULES_REQUIRES = ['azure-identity', 'azure-keyvault-keys',
                   'boto3', 'cel-python',

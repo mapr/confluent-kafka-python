@@ -18,7 +18,9 @@
 import json
 import logging
 import urllib
+from urllib.parse import unquote, urlparse
 
+import httpx
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 from collections import defaultdict
@@ -28,8 +30,7 @@ from typing import List, Dict, Type, TypeVar, \
     cast, Optional, Union, Any
 
 from cachetools import TTLCache
-from requests import (Session,
-                      utils)
+from requests import (utils)
 
 from .error import SchemaRegistryError
 
@@ -67,7 +68,7 @@ class _RestClient(object):
     """
 
     def __init__(self, conf: dict):
-        self.session = Session()
+        self.session = httpx.Client()
 
         # copy dict to avoid mutating the original
         conf_copy = conf.copy()
@@ -102,7 +103,11 @@ class _RestClient(object):
             raise ValueError("ssl.certificate.location required when"
                              " configuring ssl.key.location")
 
-        userinfo = utils.get_auth_from_url(base_url)
+        parsed = urlparse(base_url)
+        try:
+            userinfo = (unquote(parsed.username), unquote(parsed.password))
+        except (AttributeError, TypeError):
+            userinfo = ("", "")
         if 'basic.auth.user.info' in conf_copy:
             if userinfo != ('', ''):
                 raise ValueError("basic.auth.user.info configured with"
@@ -133,8 +138,22 @@ class _RestClient(object):
             raise ValueError("Unrecognized properties: {}"
                              .format(", ".join(conf_copy.keys())))
 
-    def close(self):
-        self.session.close()
+    def get_auth_from_url(url):
+        """Given a url with authentication components, extract them into a tuple of
+        username,password.
+
+        :rtype: (str,str)
+        """
+        parsed = urlparse(url)
+
+        try:
+            auth = (unquote(parsed.username), unquote(parsed.password))
+        except (AttributeError, TypeError):
+            auth = ("", "")
+
+        return auth
+        def close(self):
+            self.session.close()
 
     def get(self, url: str, query: dict = None) -> Any:
         return self.send_request(url, method='GET', query=query)

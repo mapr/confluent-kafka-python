@@ -15,7 +15,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+import httpx
 import pytest
+from httpx import BasicAuth
 
 from confluent_kafka.schema_registry import SchemaRegistryClient
 
@@ -86,8 +88,8 @@ def test_config_auth_url():
                + TEST_USERNAME + ":"
                + TEST_USER_PASSWORD + '@SchemaRegistry:65534'}
     test_client = SchemaRegistryClient(conf)
-    assert test_client._rest_client.session.auth == (TEST_USERNAME,
-                                                     TEST_USER_PASSWORD)
+    assert (test_client._rest_client.session.auth._auth_header ==
+            BasicAuth(TEST_USERNAME, TEST_USER_PASSWORD)._auth_header)
 
 
 def test_config_auth_url_and_userinfo():
@@ -111,8 +113,8 @@ def test_config_auth_userinfo():
             'basic.auth.user.info': TEST_USERNAME + ':' + TEST_USER_PASSWORD}
 
     test_client = SchemaRegistryClient(conf)
-    assert test_client._rest_client.session.auth == (TEST_USERNAME,
-                                                     TEST_USER_PASSWORD)
+    assert (test_client._rest_client.session.auth._auth_header ==
+            BasicAuth(TEST_USERNAME, TEST_USER_PASSWORD)._auth_header)
 
 
 def test_config_auth_userinfo_invalid():
