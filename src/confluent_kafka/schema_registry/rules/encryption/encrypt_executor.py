@@ -316,7 +316,7 @@ class FieldEncryptionExecutorTransform(FieldTransform):
                 version = -1
             dek = self._get_or_create_dek(ctx, version)
             key_material_bytes = dek.get_key_material_bytes()
-            ciphertext = self._cryptor.encrypt(key_material_bytes, plaintext)
+            ciphertext = self._cryptor.encrypt(key_material_bytes, plaintext, Cryptor.EMPTY_AAD)
             if self._is_dek_rotated():
                 ciphertext = self._prefix_version(dek.version, ciphertext)
             if field_ctx.field_type == FieldType.STRING:
@@ -338,7 +338,7 @@ class FieldEncryptionExecutorTransform(FieldTransform):
                     raise RuleError("no version found in ciphertext")
             dek = self._get_or_create_dek(ctx, version)
             key_material_bytes = dek.get_key_material_bytes()
-            plaintext = self._cryptor.decrypt(key_material_bytes, ciphertext)
+            plaintext = self._cryptor.decrypt(key_material_bytes, ciphertext, Cryptor.EMPTY_AAD)
             return self._to_object(field_ctx.field_type, plaintext)
         else:
             raise RuleError(f"unsupported rule mode {ctx.rule_mode}")

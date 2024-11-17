@@ -109,7 +109,7 @@ def msg_to_cel(msg: Any) -> Any:
 def field_value_to_cel(field_ctx: FieldContext, field_value: Any) -> Any:
     msg = field_ctx.containing_message
     if isinstance(msg, message.Message):
-        desc = message.DESCRIPTOR
+        desc = msg.DESCRIPTOR
         field_desc = desc.fields_by_name[field_ctx.name]
         return _scalar_field_value_to_cel(field_value, field_desc)
     else:

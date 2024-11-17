@@ -38,7 +38,8 @@ class HcVaultKmsClient(tink.KmsClient):
     Args:
       key_uri: The URI of the key the client should be bound to. If it is None
           or empty, then the client is not bound to any particular key.
-      credentials: The service account credentials.
+      token: The Vault token.
+      ns: The Vault namespace.
 
     Raises:
       TinkError: If the key uri is not valid.

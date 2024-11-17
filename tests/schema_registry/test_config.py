@@ -40,7 +40,7 @@ def test_config_url_invalid():
 
 def test_config_url_invalid_type():
     conf = {'url': dict()}
-    with pytest.raises(TypeError, match="url must be an instance of str,"
+    with pytest.raises(TypeError, match="url must be a str,"
                                         " not <(.*)>$"):
         SchemaRegistryClient(conf)
 

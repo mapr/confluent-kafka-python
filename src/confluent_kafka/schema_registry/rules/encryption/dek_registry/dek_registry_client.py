@@ -66,9 +66,9 @@ class Kek:
 
         kms_key_id = self.kms_key_id
 
-        kms_props: Optional[Dict[str, Any]] = None
+        _kms_props: Optional[Dict[str, Any]] = None
         if self.kms_props is not None:
-            kms_props = self.kms_props.to_dict()
+            _kms_props = self.kms_props.to_dict()
 
         doc = self.doc
 
@@ -85,8 +85,8 @@ class Kek:
             field_dict["kmsType"] = kms_type
         if kms_key_id is not None:
             field_dict["kmsKeyId"] = kms_key_id
-        if kms_props is not None:
-            field_dict["kmsProps"] = kms_props
+        if _kms_props is not None:
+            field_dict["kmsProps"] = _kms_props
         if doc is not None:
             field_dict["doc"] = doc
         if shared is not None:
@@ -152,9 +152,9 @@ class CreateKekRequest:
 
         kms_key_id = self.kms_key_id
 
-        kms_props: Optional[Dict[str, Any]] = None
+        _kms_props: Optional[Dict[str, Any]] = None
         if self.kms_props is not None:
-            kms_props = self.kms_props.to_dict()
+            _kms_props = self.kms_props.to_dict()
 
         doc = self.doc
 
@@ -167,8 +167,8 @@ class CreateKekRequest:
             field_dict["kmsType"] = kms_type
         if kms_key_id is not None:
             field_dict["kmsKeyId"] = kms_key_id
-        if kms_props is not None:
-            field_dict["kmsProps"] = kms_props
+        if _kms_props is not None:
+            field_dict["kmsProps"] = _kms_props
         if doc is not None:
             field_dict["doc"] = doc
         if shared is not None:
@@ -259,7 +259,7 @@ class Dek:
 
         algorithm: Optional[str] = None
         if self.algorithm is not None:
-            algorithm = self.algorithm.value
+            algorithm = self.algorithm
 
         encrypted_key_material = self.encrypted_key_material
 
@@ -339,9 +339,9 @@ class CreateDekRequest:
 
         version = self.version
 
-        algorithm: Optional[str] = None
+        _algorithm: Optional[str] = None
         if self.algorithm is not None:
-            algorithm = self.algorithm.value
+            _algorithm = self.algorithm.value
 
         encrypted_key_material = self.encrypted_key_material
 
@@ -350,8 +350,8 @@ class CreateDekRequest:
             field_dict["subject"] = subject
         if version is not None:
             field_dict["version"] = version
-        if algorithm is not None:
-            field_dict["algorithm"] = algorithm
+        if _algorithm is not None:
+            field_dict["algorithm"] = _algorithm
         if encrypted_key_material is not None:
             field_dict["encryptedKeyMaterial"] = encrypted_key_material
 
@@ -461,7 +461,7 @@ class DekRegistryClient(object):
 
     def __exit__(self, *args):
         if self._rest_client is not None:
-            self._rest_client.close()
+            self._rest_client.session.close()
 
     def register_kek(self, name: str, kms_type: str, kms_key_id: str,
         shared: bool = False, kms_props: Dict[str, str] = None, doc: str = None) -> Kek:

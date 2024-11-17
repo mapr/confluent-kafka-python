@@ -27,10 +27,9 @@ from collections import defaultdict
 from enum import Enum
 from threading import Lock
 from typing import List, Dict, Type, TypeVar, \
-    cast, Optional, Union, Any
+    cast, Optional, Union, Any, Tuple
 
 from cachetools import TTLCache
-from requests import (utils)
 
 from .error import SchemaRegistryError
 
@@ -68,8 +67,6 @@ class _RestClient(object):
     """
 
     def __init__(self, conf: dict):
-        self.session = httpx.Client()
-
         # copy dict to avoid mutating the original
         conf_copy = conf.copy()
 
@@ -77,8 +74,7 @@ class _RestClient(object):
         if base_url is None:
             raise ValueError("Missing required configuration property url")
         if not isinstance(base_url, string_type):
-            raise TypeError("url must be an instance of str, not "
-                            + str(type(base_url)))
+            raise TypeError("url must be a str, not " + str(type(base_url)))
         if not base_url.startswith('http') and not base_url.startswith('mock'):
             raise ValueError("Invalid url {}".format(base_url))
         self.base_url = base_url.rstrip('/')
@@ -86,18 +82,20 @@ class _RestClient(object):
         # The following configs map Requests Session class properties.
         # See the API docs for specifics.
         # https://requests.readthedocs.io/en/master/api/#request-sessions
+        verify = True
         ca = conf_copy.pop('ssl.ca.location', None)
         if ca is not None:
-            self.session.verify = ca
+            verify = ca
 
-        key = conf_copy.pop('ssl.key.location', None)
-        cert = conf_copy.pop('ssl.certificate.location', None)
+        key: Optional[str] = conf_copy.pop('ssl.key.location', None)
+        client_cert: Optional[str] = conf_copy.pop('ssl.certificate.location', None)
+        cert: Optional[Union[str, Tuple[str, str]]] = None
 
-        if cert is not None and key is not None:
-            self.session.cert = (cert, key)
+        if client_cert is not None and key is not None:
+            cert = (client_cert, key)
 
-        if cert is not None and key is None:
-            self.session.cert = cert
+        if client_cert is not None and key is None:
+            cert = client_cert
 
         if key is not None and cert is None:
             raise ValueError("ssl.certificate.location required when"
@@ -122,45 +120,32 @@ class _RestClient(object):
                 raise ValueError("basic.auth.user.info must be in the form"
                                  " of {username}:{password}")
 
-        self.session.auth = userinfo if userinfo != ('', '') else None
+        auth = userinfo if userinfo != ('', '') else None
 
         # The following adds support for proxy config
         # If specified: it uses the specified proxy details when making requests
         proxies = conf_copy.pop('proxies', None)
         if proxies is not None:
             if not isinstance(proxies, dict):
-                raise TypeError("proxies must be an instance of dict, not "
-                                + str(type(proxies)))
-        self.session.proxies = proxies
+                raise TypeError("proxies must be a dict, not " + str(type(proxies)))
 
         timeout = conf_copy.pop('timeout', None)
         if timeout is not None:
-            if not isinstance(timeout, dict):
-                raise TypeError("timeout must be an instance of int, not "
-                                + str(type(timeout)))
-        self.session.timeout = timeout
+            if not isinstance(timeout, (int, float)):
+                raise TypeError("timeout must be a number, not " + str(type(timeout)))
+
+        self.session = httpx.Client(
+            verify=verify,
+            cert=cert,
+            auth=auth,
+            proxies=proxies,
+            timeout=timeout
+        )
 
         # Any leftover keys are unknown to _RestClient
         if len(conf_copy) > 0:
             raise ValueError("Unrecognized properties: {}"
                              .format(", ".join(conf_copy.keys())))
-
-    def get_auth_from_url(url):
-        """Given a url with authentication components, extract them into a tuple of
-        username,password.
-
-        :rtype: (str,str)
-        """
-        parsed = urlparse(url)
-
-        try:
-            auth = (unquote(parsed.username), unquote(parsed.password))
-        except (AttributeError, TypeError):
-            auth = ("", "")
-
-        return auth
-        def close(self):
-            self.session.close()
 
     def get(self, url: str, query: dict = None) -> Any:
         return self.send_request(url, method='GET', query=query)
@@ -468,7 +453,7 @@ class SchemaRegistryClient(object):
 
     def __exit__(self, *args):
         if self._rest_client is not None:
-            self._rest_client.close()
+            self._rest_client.session.close()
 
     def config(self):
         return self._conf
@@ -985,21 +970,21 @@ class Rule:
 
         doc = self.doc
 
-        kind: Optional[str] = None
+        kind_str: Optional[str] = None
         if self.kind is not None:
-            kind = self.kind.value
+            kind_str = self.kind.value
 
-        mode: Optional[str] = None
+        mode_str: Optional[str] = None
         if self.mode is not None:
-            mode = self.mode.value
+            mode_str = self.mode.value
 
         rule_type = self.type
 
         tags = self.tags
 
-        params: Optional[Dict[str, Any]] = None
+        _params: Optional[Dict[str, Any]] = None
         if self.params is not None:
-            params = self.params.to_dict()
+            _params = self.params.to_dict()
 
         expr = self.expr
 
@@ -1015,16 +1000,16 @@ class Rule:
             field_dict["name"] = name
         if doc is not None:
             field_dict["doc"] = doc
-        if kind is not None:
-            field_dict["kind"] = kind
-        if mode is not None:
-            field_dict["mode"] = mode
+        if kind_str is not None:
+            field_dict["kind"] = kind_str
+        if mode_str is not None:
+            field_dict["mode"] = mode_str
         if type is not None:
             field_dict["type"] = rule_type
         if tags is not None:
             field_dict["tags"] = tags
-        if params is not None:
-            field_dict["params"] = params
+        if _params is not None:
+            field_dict["params"] = _params
         if expr is not None:
             field_dict["expr"] = expr
         if on_success is not None:
@@ -1093,26 +1078,26 @@ class RuleSet:
     domain_rules: Optional[List["Rule"]] = _attrs_field(hash=False)
 
     def to_dict(self) -> Dict[str, Any]:
-        migration_rules: Optional[List[Dict[str, Any]]] = None
+        _migration_rules: Optional[List[Dict[str, Any]]] = None
         if self.migration_rules is not None:
-            migration_rules = []
+            _migration_rules = []
             for migration_rules_item_data in self.migration_rules:
                 migration_rules_item = migration_rules_item_data.to_dict()
-                migration_rules.append(migration_rules_item)
+                _migration_rules.append(migration_rules_item)
 
-        domain_rules: Optional[List[Dict[str, Any]]] = None
+        _domain_rules: Optional[List[Dict[str, Any]]] = None
         if self.domain_rules is not None:
-            domain_rules = []
+            _domain_rules = []
             for domain_rules_item_data in self.domain_rules:
                 domain_rules_item = domain_rules_item_data.to_dict()
-                domain_rules.append(domain_rules_item)
+                _domain_rules.append(domain_rules_item)
 
         field_dict: Dict[str, Any] = {}
         field_dict.update({})
-        if migration_rules is not None:
-            field_dict["migrationRules"] = migration_rules
-        if domain_rules is not None:
-            field_dict["domainRules"] = domain_rules
+        if _migration_rules is not None:
+            field_dict["migrationRules"] = _migration_rules
+        if _domain_rules is not None:
+            field_dict["domainRules"] = _domain_rules
 
         return field_dict
 
@@ -1200,13 +1185,13 @@ class Metadata:
     sensitive: Optional[List[str]] = _attrs_field(hash=False)
 
     def to_dict(self) -> Dict[str, Any]:
-        tags: Optional[Dict[str, Any]] = None
+        _tags: Optional[Dict[str, Any]] = None
         if self.tags is not None:
-            tags = self.tags.to_dict()
+            _tags = self.tags.to_dict()
 
-        properties: Optional[Dict[str, Any]] = None
+        _properties: Optional[Dict[str, Any]] = None
         if self.properties is not None:
-            properties = self.properties.to_dict()
+            _properties = self.properties.to_dict()
 
         sensitive: Optional[List[str]] = None
         if self.sensitive is not None:
@@ -1215,10 +1200,10 @@ class Metadata:
                 sensitive.append(sensitive_item)
 
         field_dict: Dict[str, Any] = {}
-        if tags is not None:
-            field_dict["tags"] = tags
-        if properties is not None:
-            field_dict["properties"] = properties
+        if _tags is not None:
+            field_dict["tags"] = _tags
+        if _properties is not None:
+            field_dict["properties"] = _properties
         if sensitive is not None:
             field_dict["sensitive"] = sensitive
 
@@ -1309,39 +1294,31 @@ class Schema:
 
         schema_type = self.schema_type
 
-        references: Optional[List[Dict[str, Any]]] = []
+        _references: Optional[List[Dict[str, Any]]] = []
         if self.references is not None:
             for references_item_data in self.references:
                 references_item = references_item_data.to_dict()
-                references.append(references_item)
+                _references.append(references_item)
 
-        metadata: Optional[Dict[str, Any]]
-        if self.metadata is None:
-            metadata = None
-        elif isinstance(self.metadata, Metadata):
-            metadata = self.metadata.to_dict()
-        else:
-            metadata = self.metadata
+        _metadata: Optional[Dict[str, Any]] = None
+        if isinstance(self.metadata, Metadata):
+            _metadata = self.metadata.to_dict()
 
-        rule_set: Optional[Dict[str, Any]]
-        if self.rule_set is None:
-            rule_set = None
-        elif isinstance(self.rule_set, RuleSet):
-            rule_set = self.rule_set.to_dict()
-        else:
-            rule_set = self.rule_set
+        _rule_set: Optional[Dict[str, Any]] = None
+        if isinstance(self.rule_set, RuleSet):
+            _rule_set = self.rule_set.to_dict()
 
         field_dict: Dict[str, Any] = {}
         if schema is not None:
             field_dict["schema"] = schema
         if schema_type is not None:
             field_dict["schemaType"] = schema_type
-        if references is not None:
-            field_dict["references"] = references
-        if metadata is not None:
-            field_dict["metadata"] = metadata
-        if rule_set is not None:
-            field_dict["ruleSet"] = rule_set
+        if _references is not None:
+            field_dict["references"] = _references
+        if _metadata is not None:
+            field_dict["metadata"] = _metadata
+        if _rule_set is not None:
+            field_dict["ruleSet"] = _rule_set
 
         return field_dict
 

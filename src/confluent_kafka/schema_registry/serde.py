@@ -88,8 +88,8 @@ class RuleContext(object):
     __slots__ = ['ser_ctx', 'source', 'target', 'subject', 'rule_mode', 'rule',
                  'index', 'rules', 'inline_tags', 'field_transformer', '_field_contexts']
 
-    def __init__(self, ser_ctx: SerializationContext, source: Optional[RegisteredSchema],
-        target: Optional[RegisteredSchema], subject: str, rule_mode: RuleMode, rule: Rule,
+    def __init__(self, ser_ctx: SerializationContext, source: Optional[Schema],
+        target: Optional[Schema], subject: str, rule_mode: RuleMode, rule: Rule,
         index: int, rules: List[Rule], inline_tags: Optional[Dict[str, Set[str]]], field_transformer):
         self.ser_ctx = ser_ctx
         self.source = source
@@ -110,9 +110,9 @@ class RuleContext(object):
             if value is not None:
                 return value
         if (self.target is not None and
-            self.target.schema.metadata is not None and
-            self.target.schema.metadata.properties is not None):
-            value = self.target.schema.metadata.properties.properties.get(name)
+            self.target.metadata is not None and
+            self.target.metadata.properties is not None):
+            value = self.target.metadata.properties.properties.get(name)
             if value is not None:
                 return value
         return None
@@ -138,9 +138,9 @@ class RuleContext(object):
     def get_tags(self, full_name: str) -> Set[str]:
         result = set()
         if (self.target is not None and
-            self.target.schema.metadata is not None and
-            self.target.schema.metadata.tags is not None):
-            tags = self.target.schema.metadata.tags.tags
+            self.target.metadata is not None and
+            self.target.metadata.tags is not None):
+            tags = self.target.metadata.tags.tags
             for k, v in tags.items():
                 if wildcard_match(full_name, k):
                     result.update(v)

@@ -84,5 +84,4 @@ class AzureKmsClient(tink.KmsClient):
       )
     if not key_uri.startswith(AZURE_KEYURI_PREFIX):
       raise tink.TinkError('Invalid key_uri.')
-    key_id = key_uri[len(AZURE_KEYURI_PREFIX) :]
     return AzureKmsAead(self._client, EncryptionAlgorithm.rsa_oaep_256)
