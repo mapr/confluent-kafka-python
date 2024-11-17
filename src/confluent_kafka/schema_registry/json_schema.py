@@ -492,7 +492,7 @@ class JSONDeserializer(BaseDeserializer):
         a dict, or object instance according to from_dict if from_dict is specified.
 
         Args:
-            data (bytes): A JSON serialized record with Confluent Schema Regsitry framing.
+            data (bytes): A JSON serialized record with Confluent Schema Registry framing.
 
             ctx (SerializationContext): Metadata relevant to the serialization operation.
 

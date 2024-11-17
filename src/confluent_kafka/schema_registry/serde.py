@@ -455,7 +455,7 @@ T = TypeVar("T")
 
 class ParsedSchemaCache(object):
     """
-    Thread-safe cache for parsed chemas
+    Thread-safe cache for parsed schemas
     """
 
     def __init__(self):

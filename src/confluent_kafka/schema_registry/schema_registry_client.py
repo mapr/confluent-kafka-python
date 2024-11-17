@@ -165,7 +165,7 @@ class _RestClient(object):
         Sends HTTP request to the SchemaRegistry.
 
         All unsuccessful attempts will raise a SchemaRegistryError with the
-        response contents. In most cases this will be accompanied with a
+        response contents. In most cases this will be accompanied by a
         Schema Registry supplied error code.
 
         In the event the response is malformed an error_code of -1 will be used.

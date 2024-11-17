@@ -52,6 +52,6 @@ def get_kms_driver(key_url: str) -> KmsDriver:
     raise RuleError('no KMS driver found for key URL: ' + key_url)
 
 
-def reset_kms_drrivers() -> None:
+def reset_kms_drivers() -> None:
     """Removes all registered clients. Internal and only used for tests."""
     _kms_drivers.clear()

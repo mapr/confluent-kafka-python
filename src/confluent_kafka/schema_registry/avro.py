@@ -413,7 +413,7 @@ class AvroDeserializer(BaseDeserializer):
 
     Note:
         By default, Avro complex types are returned as dicts. This behavior can
-        be overriden by registering a callable ``from_dict`` with the deserializer to
+        be overridden by registering a callable ``from_dict`` with the deserializer to
         convert the dicts to the desired type.
 
         See ``avro_consumer.py`` in the examples directory in the examples
