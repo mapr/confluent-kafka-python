@@ -129,9 +129,16 @@ class _RestClient(object):
         proxies = conf_copy.pop('proxies', None)
         if proxies is not None:
             if not isinstance(proxies, dict):
-                raise TypeError("proxy details must be an instance of dict, not "
+                raise TypeError("proxies must be an instance of dict, not "
                                 + str(type(proxies)))
         self.session.proxies = proxies
+
+        timeout = conf_copy.pop('timeout', None)
+        if timeout is not None:
+            if not isinstance(timeout, dict):
+                raise TypeError("timeout must be an instance of int, not "
+                                + str(type(timeout)))
+        self.session.timeout = timeout
 
         # Any leftover keys are unknown to _RestClient
         if len(conf_copy) > 0:
