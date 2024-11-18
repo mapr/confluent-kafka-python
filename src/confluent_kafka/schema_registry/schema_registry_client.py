@@ -238,9 +238,9 @@ class _RestClient(_BaseRestClient):
                 method, url="/".join([self.base_url, url]),
                 headers=headers, data=body, params=query)
 
-            if (i >= self.max_retries
-                or is_success(response.status_code)
-                or not is_retriable(response.status_code)):
+            if (is_success(response.status_code)
+                or not is_retriable(response.status_code)
+                or i >= self.max_retries):
                 break
 
             time.sleep(full_jitter(self.retries_wait_ms, i))
@@ -491,6 +491,20 @@ class SchemaRegistryClient(object):
     |                              |      | to the URL of the proxy. eg:                    |
     | ``proxies``                  | dict |                                                 |
     |                              |      | ``{'http':'http://proxyhost:proxyport',...}``   |
+    +------------------------------+------+-------------------------------------------------+
+    |                              |      |                                                 |
+    | ``timeout``                  | int  | Request timeout.                                |
+    |                              |      |                                                 |
+    +------------------------------+------+-------------------------------------------------+
+    |                              |      |                                                 |
+    | ``max.retries``              | int  | Maximum retries for a request.  Defaults to 3.  |
+    |                              |      |                                                 |
+    +------------------------------+------+-------------------------------------------------+
+    |                              |      | Maximum time to wait for the first retry.       |
+    |                              |      | When jitter is applied, the actual wait may     |
+    | ``retries.wait.ms``          | int  | be less.                                        |
+    |                              |      |                                                 |
+    |                              |      | Defaults to 1000.                               |
     +------------------------------+------+-------------------------------------------------+
 
     Args:
