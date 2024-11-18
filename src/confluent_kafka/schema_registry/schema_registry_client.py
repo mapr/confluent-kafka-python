@@ -232,19 +232,18 @@ class _RestClient(_BaseRestClient):
             headers = {'Content-Length': str(len(body)),
                        'Content-Type': "application/vnd.schemaregistry.v1+json"}
 
+        response = None
         for i in range(self.max_retries + 1):
             response = self.session.request(
                 method, url="/".join([self.base_url, url]),
                 headers=headers, data=body, params=query)
 
-            if 200 <= response.status_code <= 299:
+            if (i >= self.max_retries
+                or is_success(response.status_code)
+                or not is_retriable(response.status_code)):
                 break
 
-            if i >= self.max_retries or not is_retriable(response.status_code):
-                break
-
-            sleep_time = full_jitter(self.retries_wait_ms * 2 ** i)
-            time.sleep(sleep_time)
+            time.sleep(full_jitter(self.retries_wait_ms, i))
 
         try:
             if 200 <= response.status_code <= 299:
@@ -260,12 +259,16 @@ class _RestClient(_BaseRestClient):
                                       + str(response.content))
 
 
+def is_success(status_code: int) -> bool:
+    return 200 <= status_code <= 299
+
+
 def is_retriable(status_code: int) -> bool:
     return status_code in (408, 429, 500, 502, 503, 504)
 
 
-def full_jitter(base_delay):
-    return random.uniform(0, base_delay)
+def full_jitter(base_delay: int, retries_attempted: int) -> float:
+    return random.uniform(0, base_delay * 2 ** retries_attempted)
 
 
 class _SchemaCache(object):
