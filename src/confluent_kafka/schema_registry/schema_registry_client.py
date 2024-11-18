@@ -251,7 +251,7 @@ class _RestClient(_BaseRestClient):
                 or i >= self.max_retries):
                 break
 
-            time.sleep(full_jitter(self.retries_wait_ms, self.retries_max_wait_ms, i))
+            time.sleep(full_jitter(self.retries_wait_ms, self.retries_max_wait_ms, i) / 1000)
 
         try:
             if 200 <= response.status_code <= 299:
