@@ -147,6 +147,14 @@ class _BaseRestClient(object):
                                 + str(type(retries_wait_ms)))
             self.retries_wait_ms = retries_wait_ms
 
+        self.retries_max_wait_ms = 20000
+        retries_max_wait_ms = conf_copy.pop('retries.max.wait.ms', None)
+        if retries_max_wait_ms is not None:
+            if not isinstance(retries_max_wait_ms, (int, float)):
+                raise TypeError("retries.max.wait.ms must be a number, not "
+                                + str(type(retries_max_wait_ms)))
+            self.retries_max_wait_ms = retries_max_wait_ms
+
         # Any leftover keys are unknown to _RestClient
         if len(conf_copy) > 0:
             raise ValueError("Unrecognized properties: {}"
@@ -243,7 +251,7 @@ class _RestClient(_BaseRestClient):
                 or i >= self.max_retries):
                 break
 
-            time.sleep(full_jitter(self.retries_wait_ms, i))
+            time.sleep(full_jitter(self.retries_wait_ms, self.retries_max_wait_ms, i))
 
         try:
             if 200 <= response.status_code <= 299:
@@ -267,8 +275,9 @@ def is_retriable(status_code: int) -> bool:
     return status_code in (408, 429, 500, 502, 503, 504)
 
 
-def full_jitter(base_delay_ms: int, retries_attempted: int) -> float:
-    return random.uniform(0, pow(2, retries_attempted) * base_delay_ms)
+def full_jitter(base_delay_ms: int, max_delay_ms:int, retries_attempted: int) -> float:
+    no_jitter_delay = base_delay_ms * (2.0 ** retries_attempted)
+    return random.random() * min(no_jitter_delay, max_delay_ms)
 
 
 class _SchemaCache(object):
