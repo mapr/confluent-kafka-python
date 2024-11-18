@@ -267,8 +267,8 @@ def is_retriable(status_code: int) -> bool:
     return status_code in (408, 429, 500, 502, 503, 504)
 
 
-def full_jitter(base_delay: int, retries_attempted: int) -> float:
-    return random.uniform(0, base_delay * 2 ** retries_attempted)
+def full_jitter(base_delay_ms: int, retries_attempted: int) -> float:
+    return random.uniform(0, pow(2, retries_attempted) * base_delay_ms)
 
 
 class _SchemaCache(object):
