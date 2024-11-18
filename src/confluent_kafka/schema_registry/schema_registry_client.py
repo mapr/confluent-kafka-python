@@ -56,15 +56,7 @@ log = logging.getLogger(__name__)
 VALID_AUTH_PROVIDERS = ['URL', 'USER_INFO']
 
 
-class _RestClient(object):
-    """
-    HTTP client for Confluent Schema Registry.
-
-    See SchemaRegistryClient for configuration details.
-
-    Args:
-        conf (dict): Dictionary containing _RestClient configuration
-    """
+class _BaseRestClient(object):
 
     def __init__(self, conf: dict):
         # copy dict to avoid mutating the original
@@ -82,22 +74,22 @@ class _RestClient(object):
         # The following configs map Requests Session class properties.
         # See the API docs for specifics.
         # https://requests.readthedocs.io/en/master/api/#request-sessions
-        verify = True
+        self.verify = True
         ca = conf_copy.pop('ssl.ca.location', None)
         if ca is not None:
-            verify = ca
+            self.verify = ca
 
         key: Optional[str] = conf_copy.pop('ssl.key.location', None)
         client_cert: Optional[str] = conf_copy.pop('ssl.certificate.location', None)
-        cert: Optional[Union[str, Tuple[str, str]]] = None
+        self.cert: Optional[Union[str, Tuple[str, str]]] = None
 
         if client_cert is not None and key is not None:
-            cert = (client_cert, key)
+            self.cert = (client_cert, key)
 
         if client_cert is not None and key is None:
-            cert = client_cert
+            self.cert = client_cert
 
-        if key is not None and cert is None:
+        if key is not None and client_cert is None:
             raise ValueError("ssl.certificate.location required when"
                              " configuring ssl.key.location")
 
@@ -120,32 +112,63 @@ class _RestClient(object):
                 raise ValueError("basic.auth.user.info must be in the form"
                                  " of {username}:{password}")
 
-        auth = userinfo if userinfo != ('', '') else None
+        self.auth = userinfo if userinfo != ('', '') else None
 
         # The following adds support for proxy config
         # If specified: it uses the specified proxy details when making requests
+        self.proxies = None
         proxies = conf_copy.pop('proxies', None)
         if proxies is not None:
             if not isinstance(proxies, dict):
                 raise TypeError("proxies must be a dict, not " + str(type(proxies)))
+            self.proxies = proxies
 
+        self.timeout = None
         timeout = conf_copy.pop('timeout', None)
         if timeout is not None:
             if not isinstance(timeout, (int, float)):
                 raise TypeError("timeout must be a number, not " + str(type(timeout)))
-
-        self.session = httpx.Client(
-            verify=verify,
-            cert=cert,
-            auth=auth,
-            proxies=proxies,
-            timeout=timeout
-        )
+            self.timeout = timeout
 
         # Any leftover keys are unknown to _RestClient
         if len(conf_copy) > 0:
             raise ValueError("Unrecognized properties: {}"
                              .format(", ".join(conf_copy.keys())))
+
+    def get(self, url: str, query: dict = None) -> Any:
+        raise NotImplementedError()
+
+    def post(self, url: str, body: dict, **kwargs) -> Any:
+        raise NotImplementedError()
+
+    def delete(self, url: str) -> Any:
+        raise NotImplementedError()
+
+    def put(self, url: str, body: dict = None) -> Any:
+        raise NotImplementedError()
+
+
+class _RestClient(_BaseRestClient):
+    """
+    HTTP client for Confluent Schema Registry.
+
+    See SchemaRegistryClient for configuration details.
+
+    Args:
+        conf (dict): Dictionary containing _RestClient configuration
+    """
+
+    def __init__(self, conf: dict):
+        super().__init__(conf)
+
+        self.session = httpx.Client(
+            verify=self.verify,
+            cert=self.cert,
+            auth=self.auth,
+            proxies=self.proxies,
+            timeout=self.timeout
+        )
+
 
     def get(self, url: str, query: dict = None) -> Any:
         return self.send_request(url, method='GET', query=query)
