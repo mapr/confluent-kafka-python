@@ -132,7 +132,7 @@ class _BaseRestClient(object):
                 raise TypeError("timeout must be a number, not " + str(type(timeout)))
             self.timeout = timeout
 
-        self.max_retries = 3
+        self.max_retries = 2
         max_retries = conf_copy.pop('max.retries', None)
         if max_retries is not None:
             if not isinstance(timeout, (int, float)):
@@ -497,7 +497,7 @@ class SchemaRegistryClient(object):
     |                              |      |                                                 |
     +------------------------------+------+-------------------------------------------------+
     |                              |      |                                                 |
-    | ``max.retries``              | int  | Maximum retries for a request.  Defaults to 3.  |
+    | ``max.retries``              | int  | Maximum retries for a request.  Defaults to 2.  |
     |                              |      |                                                 |
     +------------------------------+------+-------------------------------------------------+
     |                              |      | Maximum time to wait for the first retry.       |
