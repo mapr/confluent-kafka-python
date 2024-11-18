@@ -17,6 +17,8 @@
 #
 import json
 import logging
+import random
+import time
 import urllib
 from urllib.parse import unquote, urlparse
 
@@ -130,6 +132,21 @@ class _BaseRestClient(object):
                 raise TypeError("timeout must be a number, not " + str(type(timeout)))
             self.timeout = timeout
 
+        self.max_retries = 3
+        max_retries = conf_copy.pop('max.retries', None)
+        if max_retries is not None:
+            if not isinstance(timeout, (int, float)):
+                raise TypeError("max.retries must be a number, not " + str(type(max_retries)))
+            self.max_retries = max_retries
+
+        self.retries_wait_ms = 1000
+        retries_wait_ms = conf_copy.pop('retries.wait.ms', None)
+        if retries_wait_ms is not None:
+            if not isinstance(retries_wait_ms, (int, float)):
+                raise TypeError("retries.wait.ms must be a number, not "
+                                + str(type(retries_wait_ms)))
+            self.retries_wait_ms = retries_wait_ms
+
         # Any leftover keys are unknown to _RestClient
         if len(conf_copy) > 0:
             raise ValueError("Unrecognized properties: {}"
@@ -215,9 +232,19 @@ class _RestClient(_BaseRestClient):
             headers = {'Content-Length': str(len(body)),
                        'Content-Type': "application/vnd.schemaregistry.v1+json"}
 
-        response = self.session.request(
-            method, url="/".join([self.base_url, url]),
-            headers=headers, data=body, params=query)
+        for i in range(self.max_retries + 1):
+            response = self.session.request(
+                method, url="/".join([self.base_url, url]),
+                headers=headers, data=body, params=query)
+
+            if 200 <= response.status_code <= 299:
+                break
+
+            if i >= self.max_retries or not is_retriable(response.status_code):
+                break
+
+            sleep_time = full_jitter(self.retries_wait_ms * 2 ** i)
+            time.sleep(sleep_time)
 
         try:
             if 200 <= response.status_code <= 299:
@@ -231,6 +258,14 @@ class _RestClient(_BaseRestClient):
                                       -1,
                                       "Unknown Schema Registry Error: "
                                       + str(response.content))
+
+
+def is_retriable(status_code: int) -> bool:
+    return status_code in (408, 429, 500, 502, 503, 504)
+
+
+def full_jitter(base_delay):
+    return random.uniform(0, base_delay)
 
 
 class _SchemaCache(object):
