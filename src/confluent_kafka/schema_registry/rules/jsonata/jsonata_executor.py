@@ -31,11 +31,11 @@ class JsonataExecutor(RuleExecutor):
         return "JSONATA"
 
     def transform(self, ctx: RuleContext, message: Any) -> Any:
-        expr = self._cache.get_jsonata(ctx.rule.expr)
-        if expr is None:
-            expr = jsonata.Jsonata(ctx.rule.expr)
-            self._cache.set(ctx.rule.expr, expr)
-        return expr.evaluate(message)
+        jsonata_expr = self._cache.get_jsonata(ctx.rule.expr)
+        if jsonata_expr is None:
+            jsonata_expr = jsonata.Jsonata(ctx.rule.expr)
+            self._cache.set(ctx.rule.expr, jsonata_expr)
+        return jsonata_expr.evaluate(message)
 
     @classmethod
     def register(cls):
