@@ -631,7 +631,7 @@ class SchemaRegistryClient(object):
         return schema
 
     def lookup_schema(self, subject_name: str, schema: 'Schema',
-        normalize_schemas: bool = False) -> 'RegisteredSchema':
+        normalize_schemas: bool = False, deleted: bool = False) -> 'RegisteredSchema':
         """
         Returns ``schema`` registration information for ``subject``.
 
@@ -666,8 +666,8 @@ class SchemaRegistryClient(object):
                                       'version': ref.version}
                                      for ref in schema.references]
 
-        response = self._rest_client.post('subjects/{}?normalize={}'
-                                          .format(_urlencode(subject_name), normalize_schemas),
+        response = self._rest_client.post('subjects/{}?normalize={}&deleted={}'
+                                          .format(_urlencode(subject_name), normalize_schemas, deleted),
                                           body=request)
 
         registered_schema = RegisteredSchema.from_dict(response)

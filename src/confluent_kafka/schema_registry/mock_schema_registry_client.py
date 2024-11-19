@@ -163,7 +163,7 @@ class MockSchemaRegistryClient(SchemaRegistryClient):
         raise SchemaRegistryError(404, 40400, "Schema Not Found")
 
     def lookup_schema(self, subject_name: str, schema: 'Schema',
-        normalize_schemas: bool = False) -> 'RegisteredSchema':
+        normalize_schemas: bool = False, deleted: bool = False) -> 'RegisteredSchema':
 
         registered_schema = self._store.get_registered_schema_by_schema(subject_name, schema)
         if registered_schema is not None:
