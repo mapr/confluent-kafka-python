@@ -102,7 +102,7 @@ def _resolve_named_schema(schema: Schema, schema_registry_client: SchemaRegistry
     if schema.references is not None:
         for ref in schema.references:
             referenced_schema = schema_registry_client.get_version(ref.subject, ref.version, True)
-            _resolve_named_schema(referenced_schema.schema, schema_registry_client, named_schemas)
+            named_schemas = _resolve_named_schema(referenced_schema.schema, schema_registry_client, named_schemas)
             parsed_schema = parse_schema(loads(referenced_schema.schema.schema_str), named_schemas=named_schemas)
             named_schemas[ref.name] = parsed_schema
     return named_schemas

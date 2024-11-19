@@ -170,8 +170,8 @@ def _resolve_named_schema(schema: Schema, schema_registry_client: SchemaRegistry
     Resolves named schemas referenced by the provided schema recursively.
     :param schema: Schema to resolve named schemas for.
     :param schema_registry_client: SchemaRegistryClient to use for retrieval.
-    :param pool: Descriptor pool to add resolved schemas to.
-    :return: named_schemas dict.
+    :param pool: DescriptorPool to add resolved schemas to.
+    :return: DescriptorPool
     """
     if pool is None:
         pool = DescriptorPool()
@@ -179,7 +179,7 @@ def _resolve_named_schema(schema: Schema, schema_registry_client: SchemaRegistry
         for ref in schema.references:
             # TODO RAY pass format
             referenced_schema = schema_registry_client.get_version(ref.subject, ref.version, True)
-            _resolve_named_schema(referenced_schema.schema, schema_registry_client, pool)
+            pool = _resolve_named_schema(referenced_schema.schema, schema_registry_client, pool)
             pool.Add(_str_to_schema(referenced_schema.schema.schema_str))
     return pool
 

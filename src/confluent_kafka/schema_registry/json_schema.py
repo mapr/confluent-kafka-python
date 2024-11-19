@@ -21,7 +21,10 @@ import json
 import struct
 from typing import Dict, Union, Optional, List, Set, Tuple, Callable
 
+import httpx
 from jsonschema import validate, ValidationError, RefResolver
+from referencing import Registry, Resource
+from referencing._core import Resolver
 
 from confluent_kafka.schema_registry import (_MAGIC_BYTE,
                                              Schema,
@@ -62,24 +65,31 @@ class _ContextStringIO(BytesIO):
         return False
 
 
+def _retrieve_via_httpx(uri: str):
+    response = httpx.get(uri)
+    return Resource.from_contents(response.json())
+
+
 def _resolve_named_schema(schema: Schema, schema_registry_client: SchemaRegistryClient,
-    named_schemas: Dict[str, JsonSchema] = None) -> Dict[str, JsonSchema]:
+    ref_registry: Registry = None) -> Registry:
     """
     Resolves named schemas referenced by the provided schema recursively.
     :param schema: Schema to resolve named schemas for.
     :param schema_registry_client: SchemaRegistryClient to use for retrieval.
-    :param named_schemas: Dict of named schemas resolved recursively.
-    :return: named_schemas dict.
+    :param ref_registry: Registry of named schemas resolved recursively.
+    :return: Registry
     """
-    if named_schemas is None:
-        named_schemas = {}
+    if ref_registry is None:
+        # Retrieve external schemas for backward compatibility
+        ref_registry = Registry(retrieve=_retrieve_via_httpx)
     if schema.references is not None:
         for ref in schema.references:
             referenced_schema = schema_registry_client.get_version(ref.subject, ref.version, True)
-            _resolve_named_schema(referenced_schema.schema, schema_registry_client, named_schemas)
+            ref_registry = _resolve_named_schema(referenced_schema.schema, schema_registry_client, ref_registry)
             referenced_schema_dict = json.loads(referenced_schema.schema.schema_str)
-            named_schemas[ref.name] = referenced_schema_dict
-    return named_schemas
+            resource = Resource.from_contents(referenced_schema_dict)
+            ref_registry = ref_registry.with_resource(ref.name, resource)
+    return ref_registry
 
 
 class JSONSerializer(BaseSerializer):
@@ -188,7 +198,7 @@ class JSONSerializer(BaseSerializer):
 
         conf (dict): JsonSerializer configuration.
     """  # noqa: E501
-    __slots__ = ['_known_subjects', '_parsed_schema', '_named_schemas',
+    __slots__ = ['_known_subjects', '_parsed_schema', '_ref_registry',
                  '_schema', '_schema_id', '_schema_name', '_to_dict',
                  '_parsed_schemas', '_validate']
 
@@ -259,7 +269,7 @@ class JSONSerializer(BaseSerializer):
             raise ValueError("Unrecognized properties: {}"
                              .format(", ".join(conf_copy.keys())))
 
-        schema_dict, named_schemas = self._get_parsed_schema(self._schema)
+        schema_dict, ref_registry = self._get_parsed_schema(self._schema)
         if schema_dict:
             schema_name = schema_dict.get('title', None)
         else:
@@ -267,7 +277,7 @@ class JSONSerializer(BaseSerializer):
 
         self._schema_name = schema_name
         self._parsed_schema = schema_dict
-        self._named_schemas = named_schemas
+        self._ref_registry = ref_registry
 
         for rule in self._rule_registry.get_executors():
             rule.configure(self._registry.config() if self._registry else None, rule_conf)
@@ -322,20 +332,20 @@ class JSONSerializer(BaseSerializer):
 
         if self._validate:
             try:
-                if self._named_schemas:
+                if self._ref_registry:
                     validate(instance=value, schema=self._parsed_schema,
-                             resolver=RefResolver(self._parsed_schema.get('$id'),
-                                                  self._parsed_schema,
-                                                  store=self._named_schemas))
+                             registry=self._ref_registry)
                 else:
                     validate(instance=value, schema=self._parsed_schema)
             except ValidationError as ve:
                 raise SerializationError(ve.message)
 
         if latest_schema is not None:
-            parsed_schema, named_schemas = self._get_parsed_schema(latest_schema.schema)
+            parsed_schema, ref_registry = self._get_parsed_schema(latest_schema.schema)
+            root_resource = Resource.from_contents(parsed_schema)
+            ref_resolver = ref_registry.resolver_with_root(root_resource)
             field_transformer = lambda rule_ctx, msg, field_transform: (
-                transform(rule_ctx, parsed_schema, named_schemas, "$", msg, field_transform))
+                transform(rule_ctx, parsed_schema, ref_resolver, "$", msg, field_transform))
             value = self._execute_rules(ctx, subject, RuleMode.WRITE, None,
                                         latest_schema.schema, value, None,
                                         field_transformer)
@@ -349,19 +359,19 @@ class JSONSerializer(BaseSerializer):
 
             return fo.getvalue()
 
-    def _get_parsed_schema(self, schema: Schema) -> Tuple[Optional[JsonSchema], Dict[str, JsonSchema]]:
+    def _get_parsed_schema(self, schema: Schema) -> Tuple[Optional[JsonSchema], Registry]:
         if schema is None:
             return None, {}
 
-        parsed_schema, named_schemas = self._parsed_schemas.get_parsed_schema(schema)
+        parsed_schema, ref_registry = self._parsed_schemas.get_parsed_schema(schema)
         if parsed_schema is not None:
-            return parsed_schema, named_schemas
+            return parsed_schema, ref_registry
 
-        named_schemas = _resolve_named_schema(schema, self._registry)
+        ref_registry = _resolve_named_schema(schema, self._registry)
         parsed_schema = json.loads(schema.schema_str)
 
-        self._parsed_schemas.set(schema, (parsed_schema, named_schemas))
-        return parsed_schema, named_schemas
+        self._parsed_schemas.set(schema, (parsed_schema, ref_registry))
+        return parsed_schema, ref_registry
 
 
 class JSONDeserializer(BaseDeserializer):
@@ -414,7 +424,7 @@ class JSONDeserializer(BaseDeserializer):
         schema_registry_client (SchemaRegistryClient, optional): Schema Registry client instance. Needed if ``schema_str`` is a schema referencing other schemas or is not provided.
     """  # noqa: E501
 
-    __slots__ = ['_parsed_schema', '_named_schemas', '_from_dict', '_schema',
+    __slots__ = ['_parsed_schema', '_ref_registry', '_from_dict', '_schema',
                  '_parsed_schemas', '_validate']
 
     _default_conf = {'use.latest.version': False,
@@ -446,7 +456,7 @@ class JSONDeserializer(BaseDeserializer):
         else:
             raise TypeError('You must pass either str or Schema')
 
-        self._parsed_schema, self._named_schemas = self._get_parsed_schema(schema)
+        self._parsed_schema, self._ref_registry = self._get_parsed_schema(schema)
         self._schema = schema
         self._registry = schema_registry_client
         self._rule_registry = rule_registry if rule_registry else RuleRegistry.get_global_instance()
@@ -529,7 +539,7 @@ class JSONDeserializer(BaseDeserializer):
             obj_dict = json.loads(payload.read())
 
             writer_schema_raw = self._registry.get_schema(schema_id)
-            writer_schema, writer_named_schemas = self._get_parsed_schema(writer_schema_raw)
+            writer_schema, writer_ref_registry = self._get_parsed_schema(writer_schema_raw)
 
             if subject is None:
                 subject = self._subject_name_func(ctx, writer_schema.get("title"))
@@ -539,28 +549,28 @@ class JSONDeserializer(BaseDeserializer):
             if latest_schema is not None:
                 migrations = self._get_migrations(subject, writer_schema_raw, latest_schema, None)
                 reader_schema_raw = latest_schema.schema
-                reader_schema, reader_named_schemas = self._get_parsed_schema(latest_schema.schema)
+                reader_schema, reader_ref_registry = self._get_parsed_schema(latest_schema.schema)
             else:
                 migrations = None
                 reader_schema_raw = writer_schema_raw
-                reader_schema, reader_named_schemas = writer_schema, writer_named_schemas
+                reader_schema, reader_ref_registry = writer_schema, writer_ref_registry
 
             if migrations:
                 obj_dict = self._execute_migrations(ctx, subject, migrations, obj_dict)
 
+            reader_root_resource = Resource.from_contents(reader_schema)
+            reader_ref_resolver = reader_ref_registry.resolver_with_root(reader_root_resource)
             field_transformer = lambda rule_ctx, message, field_transform: (
-                transform(rule_ctx, reader_schema, reader_named_schemas, "$", message, field_transform))
+                transform(rule_ctx, reader_schema, reader_ref_resolver, "$", message, field_transform))
             obj_dict = self._execute_rules(ctx, subject, RuleMode.READ, None,
                                            reader_schema_raw, obj_dict, None,
                                            field_transformer)
 
             if self._validate:
                 try:
-                    if self._named_schemas:
+                    if self._ref_registry:
                         validate(instance=obj_dict, schema=self._parsed_schema,
-                                 resolver=RefResolver(self._parsed_schema.get('$id'),
-                                                      self._parsed_schema,
-                                                      store=self._named_schemas))
+                                 registry = self._ref_registry)
                     else:
                         validate(instance=obj_dict, schema=self._parsed_schema)
                 except ValidationError as ve:
@@ -571,22 +581,22 @@ class JSONDeserializer(BaseDeserializer):
 
             return obj_dict
 
-    def _get_parsed_schema(self, schema: Schema) -> Tuple[Optional[JsonSchema], Dict[str, JsonSchema]]:
+    def _get_parsed_schema(self, schema: Schema) -> Tuple[Optional[JsonSchema], Registry]:
         if schema is None:
             return None, {}
 
-        parsed_schema, named_schemas = self._parsed_schemas.get_parsed_schema(schema)
+        parsed_schema, ref_registry = self._parsed_schemas.get_parsed_schema(schema)
         if parsed_schema is not None:
-            return parsed_schema, named_schemas
+            return parsed_schema, ref_registry
 
-        named_schemas = _resolve_named_schema(schema, self._registry)
+        ref_registry = _resolve_named_schema(schema, self._registry)
         parsed_schema = json.loads(schema.schema_str)
 
-        self._parsed_schemas.set(schema, (parsed_schema, named_schemas))
-        return parsed_schema, named_schemas
+        self._parsed_schemas.set(schema, (parsed_schema, ref_registry))
+        return parsed_schema, ref_registry
 
 
-def transform(ctx: RuleContext, schema: JsonSchema, named_schemas: Dict[str, JsonSchema],
+def transform(ctx: RuleContext, schema: JsonSchema, ref_resolver: Resolver,
     path: str, message: JsonMessage, field_transform: FieldTransform) -> Optional[JsonMessage]:
     if message is None or schema is None or isinstance(schema, bool):
         return message
@@ -597,32 +607,32 @@ def transform(ctx: RuleContext, schema: JsonSchema, named_schemas: Dict[str, Jso
     if all_of is not None:
         subschema = _validate_subschemas(all_of, message)
         if subschema is not None:
-            return transform(ctx, subschema, named_schemas, path, message, field_transform)
+            return transform(ctx, subschema, ref_resolver, path, message, field_transform)
     any_of = schema.get("anyOf")
     if any_of is not None:
         subschema = _validate_subschemas(any_of, message)
         if subschema is not None:
-            return transform(ctx, subschema, named_schemas, path, message, field_transform)
+            return transform(ctx, subschema, ref_resolver, path, message, field_transform)
     one_of = schema.get("oneOf")
     if one_of is not None:
         subschema = _validate_subschemas(one_of, message)
         if subschema is not None:
-            return transform(ctx, subschema, named_schemas, path, message, field_transform)
+            return transform(ctx, subschema, ref_resolver, path, message, field_transform)
     items = schema.get("items")
     if items is not None:
         if isinstance(message, list):
-            return [transform(ctx, items, named_schemas, path, item, field_transform) for item in message]
+            return [transform(ctx, items, ref_resolver, path, item, field_transform) for item in message]
     ref = schema.get("$ref")
     if ref is not None:
-        ref_schema = named_schemas.get(ref)
-        return transform(ctx, ref_schema, named_schemas, path, message, field_transform)
+        ref_schema = ref_resolver.lookup(ref)
+        return transform(ctx, ref_schema, ref_resolver, path, message, field_transform)
     schema_type = get_type(schema)
     if schema_type == FieldType.RECORD:
         props = schema.get("properties")
         if props is not None:
             for prop_name, prop_schema in props.items():
                 _transform_field(ctx, path, prop_name, message,
-                                 prop_schema, named_schemas, field_transform)
+                                 prop_schema, ref_resolver, field_transform)
         return message
     if schema_type in (FieldType.ENUM, FieldType.STRING, FieldType.INT, FieldType.DOUBLE, FieldType.BOOLEAN):
         if field_ctx is not None:
@@ -633,7 +643,7 @@ def transform(ctx: RuleContext, schema: JsonSchema, named_schemas: Dict[str, Jso
 
 
 def _transform_field(ctx: RuleContext, path: str, prop_name: str, message: JsonMessage,
-    prop_schema: JsonSchema, named_schemas: Dict[str, JsonSchema], field_transform: FieldTransform):
+    prop_schema: JsonSchema, ref_resolver: Resolver, field_transform: FieldTransform):
     full_name = path + "." + prop_name
     try:
         ctx.enter_field(
@@ -644,7 +654,7 @@ def _transform_field(ctx: RuleContext, path: str, prop_name: str, message: JsonM
             get_inline_tags(prop_schema)
         )
         value = message[prop_name]
-        new_value = transform(ctx, prop_schema, named_schemas, full_name, value, field_transform)
+        new_value = transform(ctx, prop_schema, ref_resolver, full_name, value, field_transform)
         if ctx.rule.kind == RuleKind.CONDITION:
             if new_value is False:
                 raise RuleConditionError(ctx.rule)
