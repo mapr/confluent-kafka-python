@@ -19,10 +19,10 @@ from io import BytesIO
 
 import json
 import struct
-from typing import Dict, Union, Optional, List, Set, Tuple, Callable
+from typing import Union, Optional, List, Set, Tuple, Callable
 
 import httpx
-from jsonschema import validate, ValidationError, RefResolver
+from jsonschema import validate, ValidationError
 from referencing import Registry, Resource
 from referencing._core import Resolver
 
@@ -359,9 +359,9 @@ class JSONSerializer(BaseSerializer):
 
             return fo.getvalue()
 
-    def _get_parsed_schema(self, schema: Schema) -> Tuple[Optional[JsonSchema], Registry]:
+    def _get_parsed_schema(self, schema: Schema) -> Tuple[Optional[JsonSchema], Optional[Registry]]:
         if schema is None:
-            return None, {}
+            return None, None
 
         parsed_schema, ref_registry = self._parsed_schemas.get_parsed_schema(schema)
         if parsed_schema is not None:
@@ -581,9 +581,9 @@ class JSONDeserializer(BaseDeserializer):
 
             return obj_dict
 
-    def _get_parsed_schema(self, schema: Schema) -> Tuple[Optional[JsonSchema], Registry]:
+    def _get_parsed_schema(self, schema: Schema) -> Tuple[Optional[JsonSchema], Optional[Registry]]:
         if schema is None:
-            return None, {}
+            return None, None
 
         parsed_schema, ref_registry = self._parsed_schemas.get_parsed_schema(schema)
         if parsed_schema is not None:
@@ -625,7 +625,7 @@ def transform(ctx: RuleContext, schema: JsonSchema, ref_resolver: Resolver,
     ref = schema.get("$ref")
     if ref is not None:
         ref_schema = ref_resolver.lookup(ref)
-        return transform(ctx, ref_schema, ref_resolver, path, message, field_transform)
+        return transform(ctx, ref_schema.contents, ref_resolver, path, message, field_transform)
     schema_type = get_type(schema)
     if schema_type == FieldType.RECORD:
         props = schema.get("properties")

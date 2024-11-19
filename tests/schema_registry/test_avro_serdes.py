@@ -38,6 +38,8 @@ from confluent_kafka.schema_registry.rules.encryption.hcvault.hcvault_driver imp
     HcVaultKmsDriver
 from confluent_kafka.schema_registry.rules.encryption.localkms.local_driver import \
     LocalKmsDriver
+from confluent_kafka.schema_registry.rules.jsonata.jsonata_executor import \
+    JsonataExecutor
 from confluent_kafka.schema_registry.schema_registry_client import RuleSet, \
     Rule, RuleKind, RuleMode, SchemaReference
 from confluent_kafka.serialization import SerializationContext, MessageField
@@ -49,6 +51,7 @@ AwsKmsDriver.register()
 AzureKmsDriver.register()
 GcpKmsDriver.register()
 HcVaultKmsDriver.register()
+JsonataExecutor.register()
 LocalKmsDriver.register()
 
 _BASE_URL = "mock://"

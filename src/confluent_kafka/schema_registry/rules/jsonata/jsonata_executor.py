@@ -34,7 +34,7 @@ class JsonataExecutor(RuleExecutor):
         expr = self._cache.get_jsonata(ctx.rule.expr)
         if expr is None:
             expr = jsonata.Jsonata(ctx.rule.expr)
-            self._cache.set(ctx.rule.expr, jsonata)
+            self._cache.set(ctx.rule.expr, expr)
         return expr.evaluate(message)
 
     @classmethod
@@ -47,9 +47,9 @@ class _JsonataCache(object):
         self.lock = Lock()
         self.exprs = {}
 
-    def set(self, expr: str, jsonata: jsonata.Jsonata):
+    def set(self, expr: str, jsonata_expr: jsonata.Jsonata):
         with self.lock:
-            self.exprs[expr] = jsonata
+            self.exprs[expr] = jsonata_expr
 
     def get_jsonata(self, expr: str) -> Optional[jsonata.Jsonata]:
         with self.lock:

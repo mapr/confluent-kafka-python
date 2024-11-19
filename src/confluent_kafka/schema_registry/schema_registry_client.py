@@ -642,6 +642,8 @@ class SchemaRegistryClient(object):
             
             normalize_schemas (bool): Normalize schema before registering
 
+            deleted (bool): Whether to include deleted schemas.
+
         Returns:
             RegisteredSchema: Subject registration information for this schema.
 
