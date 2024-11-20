@@ -16,6 +16,7 @@
 # limitations under the License.
 import decimal
 import re
+from collections import defaultdict
 from io import BytesIO
 from json import loads
 from struct import pack, unpack
@@ -716,13 +717,16 @@ def _disjoint(tags1: Set[str], tags2: Set[str]) -> bool:
 
 def _resolve_union(schema: AvroSchema, message: AvroMessage) -> Optional[AvroSchema]:
     for subschema in schema:
-        if validate(message, subschema):
-            return subschema
+        try:
+            validate(message, subschema)
+        except:
+            continue
+        return subschema
     return None
 
 
 def get_inline_tags(schema: AvroSchema) -> Dict[str, Set[str]]:
-    inline_tags = {}
+    inline_tags = defaultdict(set)
     _get_inline_tags_recursively('', '', schema, inline_tags)
     return inline_tags
 

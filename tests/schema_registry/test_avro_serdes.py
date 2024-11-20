@@ -501,3 +501,61 @@ def test_avro_cel_field_transform():
     assert obj2 == newobj
 
 
+def test_avro_cel_field_transform_complex():
+    conf = {'url': _BASE_URL}
+    client = SchemaRegistryClient.new_client(conf)
+    ser_conf = {'auto.register.schemas': False, 'use.latest.version': True}
+    schema = {
+        'type': 'record',
+        'name': 'test',
+        'fields': [
+            {'name': 'arrayField', 'type':
+                {'type': 'array', 'items': 'string'}
+            },
+            {'name': 'mapField', 'type':
+                {'type': 'map', 'values': 'string'}
+            },
+            {'name': 'unionField', 'type': ['null', 'string'], 'confluent:tags': ['PII']}
+        ]
+    }
+
+    rule = Rule(
+        "test-cel",
+        "",
+        RuleKind.TRANSFORM,
+        RuleMode.WRITE,
+        "CEL_FIELD",
+        None,
+        None,
+        "typeName == 'STRING' ; value + '-suffix'",
+        None,
+        None,
+        False
+    )
+    client.register_schema(_SUBJECT, Schema(
+        json.dumps(schema),
+        "AVRO",
+        [],
+        None,
+        RuleSet(None, [rule])
+    ))
+
+    obj = {
+        'arrayField': ['hello'],
+        'mapField': {'key': 'world'},
+        'unionField': 'bye',
+    }
+    ser = AvroSerializer(client, schema_str=None, conf=ser_conf)
+    ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
+    bytes = ser(obj, ser_ctx)
+
+    obj2 = {
+        'arrayField': ['hello-suffix'],
+        'mapField': {'key': 'world-suffix'},
+        'unionField': 'bye-suffix',
+    }
+    deser = AvroDeserializer(client)
+    newobj = deser(bytes, ser_ctx)
+    assert obj2 == newobj
+
+
