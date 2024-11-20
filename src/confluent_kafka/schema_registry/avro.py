@@ -352,7 +352,7 @@ class AvroSerializer(BaseSerializer):
 
         if latest_schema is not None:
             parsed_schema = self._get_parsed_schema(latest_schema.schema)
-            field_transformer = lambda rule_ctx, msg, field_transform: (
+            field_transformer = lambda rule_ctx, field_transform, msg: (
                 transform(rule_ctx, parsed_schema, msg, field_transform))
             value = self._execute_rules(ctx, subject, RuleMode.WRITE, None,
                                         # TODO RAY - check if we need to get inline tags from named_schemas
@@ -583,7 +583,7 @@ class AvroDeserializer(BaseDeserializer):
                                              reader_schema,
                                              self._return_record_name)
 
-            field_transformer = lambda rule_ctx, message, field_transform: (
+            field_transformer = lambda rule_ctx, field_transform, message: (
                 transform(rule_ctx, reader_schema, message, field_transform))
             obj_dict = self._execute_rules(ctx, subject, RuleMode.READ, None,
                                            # TODO RAY - check if we need to get inline tags from named_schemas

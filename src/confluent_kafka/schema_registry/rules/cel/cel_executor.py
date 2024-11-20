@@ -138,8 +138,10 @@ def _value_to_cel(msg: Any) -> Any:
     elif isinstance(msg, bool):
         return celtypes.BoolType(msg)
     elif isinstance(msg, datetime.datetime):
+        # this impl differs from the other clients
         return celtypes.TimestampType(msg)
     elif isinstance(msg, datetime.timedelta):
+        # this impl differs from the other clients
         return celtypes.DurationType(msg)
     if isinstance(msg, datetime.date):
         # convert date to int

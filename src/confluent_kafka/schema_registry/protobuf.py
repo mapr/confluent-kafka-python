@@ -518,7 +518,7 @@ class ProtobufSerializer(BaseSerializer):
         if latest_schema is not None:
             fd = self._get_parsed_schema(latest_schema.schema)
             desc = fd.message_types_by_name[message.DESCRIPTOR.full_name]
-            field_transformer = lambda rule_ctx, msg, field_transform: (
+            field_transformer = lambda rule_ctx, field_transform, msg: (
                 transform(rule_ctx, desc, msg, field_transform))
             message = self._execute_rules(ctx, subject, RuleMode.WRITE, None,
                                           latest_schema.schema, message, None,
@@ -829,7 +829,7 @@ class ProtobufDeserializer(BaseDeserializer):
                 except DecodeError as e:
                     raise SerializationError(str(e))
 
-            field_transformer = lambda rule_ctx, message, field_transform: (
+            field_transformer = lambda rule_ctx, field_transform, message: (
                 transform(rule_ctx, reader_desc, message, field_transform))
             msg = self._execute_rules(ctx, subject, RuleMode.READ, None,
                                            reader_schema_raw, msg, None,

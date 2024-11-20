@@ -39,11 +39,8 @@ class CelFieldExecutor(FieldRuleExecutor):
             return None
         if not field_ctx.is_primitive():
             return field_value
-        message = field_ctx.containing_message
-        desc = message.DESCRIPTOR
-        field_desc = desc.fields_by_name[field_ctx.name]
         args = {
-            "value": field_value_to_cel(field_value, field_desc),
+            "value": field_value_to_cel(field_ctx, field_value),
             "fullName": field_ctx.full_name,
             "name": field_ctx.name,
             "typeName": field_ctx.type_name(),

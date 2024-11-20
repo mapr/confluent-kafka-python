@@ -344,7 +344,7 @@ class JSONSerializer(BaseSerializer):
             parsed_schema, ref_registry = self._get_parsed_schema(latest_schema.schema)
             root_resource = Resource.from_contents(parsed_schema)
             ref_resolver = ref_registry.resolver_with_root(root_resource)
-            field_transformer = lambda rule_ctx, msg, field_transform: (
+            field_transformer = lambda rule_ctx, field_transform, msg: (
                 transform(rule_ctx, parsed_schema, ref_resolver, "$", msg, field_transform))
             value = self._execute_rules(ctx, subject, RuleMode.WRITE, None,
                                         latest_schema.schema, value, None,
@@ -560,7 +560,7 @@ class JSONDeserializer(BaseDeserializer):
 
             reader_root_resource = Resource.from_contents(reader_schema)
             reader_ref_resolver = reader_ref_registry.resolver_with_root(reader_root_resource)
-            field_transformer = lambda rule_ctx, message, field_transform: (
+            field_transformer = lambda rule_ctx, field_transform, message: (
                 transform(rule_ctx, reader_schema, reader_ref_resolver, "$", message, field_transform))
             obj_dict = self._execute_rules(ctx, subject, RuleMode.READ, None,
                                            reader_schema_raw, obj_dict, None,
