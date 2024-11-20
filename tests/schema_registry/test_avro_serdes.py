@@ -99,10 +99,10 @@ def test_avro_basic_serialization():
     }
     ser = AvroSerializer(client, schema_str=json.dumps(schema), conf=ser_conf)
     ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
-    bytes = ser(obj, ser_ctx)
+    obj_bytes = ser(obj, ser_ctx)
 
     deser = AvroDeserializer(client)
-    obj2 = deser(bytes, ser_ctx)
+    obj2 = deser(obj_bytes, ser_ctx)
     assert obj == obj2
 
 
@@ -139,10 +139,10 @@ def test_avro_serialize_nested():
     }
     ser = AvroSerializer(client, schema_str=json.dumps(schema), conf=ser_conf)
     ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
-    bytes = ser(obj, ser_ctx)
+    obj_bytes = ser(obj, ser_ctx)
 
     deser = AvroDeserializer(client)
-    obj2 = deser(bytes, ser_ctx)
+    obj2 = deser(obj_bytes, ser_ctx)
     assert obj == obj2
 
 
@@ -185,10 +185,10 @@ def test_avro_serialize_references():
 
     ser = AvroSerializer(client, schema_str=None, conf=ser_conf)
     ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
-    bytes = ser(obj, ser_ctx)
+    obj_bytes = ser(obj, ser_ctx)
 
     deser = AvroDeserializer(client)
-    obj2 = deser(bytes, ser_ctx)
+    obj2 = deser(obj_bytes, ser_ctx)
     assert obj == obj2
 
 
@@ -230,10 +230,10 @@ def test_avro_serialize_union_with_references():
 
     ser = AvroSerializer(client, schema_str=None, conf=ser_conf)
     ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
-    bytes = ser(obj, ser_ctx)
+    obj_bytes = ser(obj, ser_ctx)
 
     deser = AvroDeserializer(client)
-    obj2 = deser(bytes, ser_ctx)
+    obj2 = deser(obj_bytes, ser_ctx)
     assert obj == obj2
 
 
@@ -271,13 +271,13 @@ def test_avro_schema_evolution():
 
     ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
     ser = AvroSerializer(client, schema_str=None, conf=ser_conf)
-    bytes = ser(obj, ser_ctx)
+    obj_bytes = ser(obj, ser_ctx)
 
     client.register_schema(_SUBJECT, Schema(json.dumps(evolution2)))
 
     client.clear_latest_caches()
     deser = AvroDeserializer(client, conf={ 'use.latest.version': True })
-    obj2 = deser(bytes, ser_ctx)
+    obj2 = deser(obj_bytes, ser_ctx)
     assert obj2.get('fieldToDelete') is None
     assert obj2.get('newOptionalField') == 'optional'
 
@@ -328,10 +328,10 @@ def test_avro_cel_condition():
     }
     ser = AvroSerializer(client, schema_str=None, conf=ser_conf)
     ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
-    bytes = ser(obj, ser_ctx)
+    obj_bytes = ser(obj, ser_ctx)
 
     deser = AvroDeserializer(client)
-    obj2 = deser(bytes, ser_ctx)
+    obj2 = deser(obj_bytes, ser_ctx)
     assert obj == obj2
 
 
@@ -388,10 +388,10 @@ def test_avro_cel_condition_logical_type():
     }
     ser = AvroSerializer(client, schema_str=None, conf=ser_conf)
     ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
-    bytes = ser(obj, ser_ctx)
+    obj_bytes = ser(obj, ser_ctx)
 
     deser = AvroDeserializer(client)
-    obj2 = deser(bytes, ser_ctx)
+    obj2 = deser(obj_bytes, ser_ctx)
     assert obj == obj2
 
 
@@ -442,7 +442,7 @@ def test_avro_cel_condition_fail():
     ser = AvroSerializer(client, schema_str=None, conf=ser_conf)
     ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
     try:
-        bytes = ser(obj, ser_ctx)
+        obj_bytes = ser(obj, ser_ctx)
     except Exception as e:
         assert isinstance(e.__cause__, RuleConditionError)
 
@@ -493,10 +493,10 @@ def test_avro_cel_condition_ignore_fail():
     }
     ser = AvroSerializer(client, schema_str=None, conf=ser_conf)
     ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
-    bytes = ser(obj, ser_ctx)
+    obj_bytes = ser(obj, ser_ctx)
 
     deser = AvroDeserializer(client)
-    obj2 = deser(bytes, ser_ctx)
+    obj2 = deser(obj_bytes, ser_ctx)
     assert obj == obj2
 
 
@@ -546,7 +546,7 @@ def test_avro_cel_field_transform():
     }
     ser = AvroSerializer(client, schema_str=None, conf=ser_conf)
     ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
-    bytes = ser(obj, ser_ctx)
+    obj_bytes = ser(obj, ser_ctx)
 
     obj2 = {
         'intField': 123,
@@ -556,7 +556,7 @@ def test_avro_cel_field_transform():
         'bytesField': b'foobar',
     }
     deser = AvroDeserializer(client)
-    newobj = deser(bytes, ser_ctx)
+    newobj = deser(obj_bytes, ser_ctx)
     assert obj2 == newobj
 
 
@@ -606,7 +606,7 @@ def test_avro_cel_field_transform_complex():
     }
     ser = AvroSerializer(client, schema_str=None, conf=ser_conf)
     ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
-    bytes = ser(obj, ser_ctx)
+    obj_bytes = ser(obj, ser_ctx)
 
     obj2 = {
         'arrayField': ['hello-suffix'],
@@ -614,7 +614,7 @@ def test_avro_cel_field_transform_complex():
         'unionField': 'bye-suffix',
     }
     deser = AvroDeserializer(client)
-    newobj = deser(bytes, ser_ctx)
+    newobj = deser(obj_bytes, ser_ctx)
     assert obj2 == newobj
 
 
@@ -664,7 +664,7 @@ def test_avro_cel_field_transform_complex_with_none():
     }
     ser = AvroSerializer(client, schema_str=None, conf=ser_conf)
     ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
-    bytes = ser(obj, ser_ctx)
+    obj_bytes = ser(obj, ser_ctx)
 
     obj2 = {
         'arrayField': ['hello-suffix'],
@@ -672,7 +672,7 @@ def test_avro_cel_field_transform_complex_with_none():
         'unionField': None,
     }
     deser = AvroDeserializer(client)
-    newobj = deser(bytes, ser_ctx)
+    newobj = deser(obj_bytes, ser_ctx)
     assert obj2 == newobj
 
 
@@ -722,10 +722,10 @@ def test_avro_cel_field_condition():
     }
     ser = AvroSerializer(client, schema_str=None, conf=ser_conf)
     ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
-    bytes = ser(obj, ser_ctx)
+    obj_bytes = ser(obj, ser_ctx)
 
     deser = AvroDeserializer(client)
-    obj2 = deser(bytes, ser_ctx)
+    obj2 = deser(obj_bytes, ser_ctx)
     assert obj == obj2
 
 
@@ -776,7 +776,7 @@ def test_avro_cel_field_condition_fail():
     ser = AvroSerializer(client, schema_str=None, conf=ser_conf)
     ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
     try:
-        bytes = ser(obj, ser_ctx)
+        obj_bytes = ser(obj, ser_ctx)
     except Exception as e:
         assert isinstance(e.__cause__, RuleConditionError)
 
@@ -833,7 +833,7 @@ def test_avro_encryption():
     ser = AvroSerializer(client, schema_str=None, conf=ser_conf, rule_conf=rule_conf)
     dek_client = field_encryption_executor.client
     ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
-    bytes = ser(obj, ser_ctx)
+    obj_bytes = ser(obj, ser_ctx)
 
     # reset encrypted fields
     obj['stringField'] = 'hi'
@@ -841,7 +841,7 @@ def test_avro_encryption():
 
     deser = AvroDeserializer(client, rule_conf=rule_conf)
     field_encryption_executor.client = dek_client
-    obj2 = deser(bytes, ser_ctx)
+    obj2 = deser(obj_bytes, ser_ctx)
     assert obj == obj2
 
 
@@ -898,55 +898,51 @@ def test_avro_encryption_dek_rotation():
         'bytesField': b'foobar',
     }
     ser = AvroSerializer(client, schema_str=None, conf=ser_conf, rule_conf=rule_conf)
-    dek_client = executor.client
+    dek_client: DekRegistryClient = executor.client
     ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
-    bytes = ser(obj, ser_ctx)
+    obj_bytes = ser(obj, ser_ctx)
 
     # reset encrypted fields
     obj['stringField'] = 'hi'
 
     deser = AvroDeserializer(client, rule_conf=rule_conf)
     executor.client = dek_client
-    obj2 = deser(bytes, ser_ctx)
+    obj2 = deser(obj_bytes, ser_ctx)
     assert obj == obj2
 
-    client: DekRegistryClient = executor.client
-    dek = client.get_dek("kek1", _SUBJECT, version=-1)
+    dek_client = executor.client
+    dek = dek_client.get_dek("kek1", _SUBJECT, version=-1)
     assert dek.version == 1
 
     # advance 2 days
     now = datetime.now() + timedelta(days=2)
     executor.clock.fixed_now = int(round(now.timestamp() * 1000))
 
-    bytes = ser(obj, ser_ctx)
+    obj_bytes = ser(obj, ser_ctx)
 
     # reset encrypted fields
     obj['stringField'] = 'hi'
 
-    obj2 = deser(bytes, ser_ctx)
+    obj2 = deser(obj_bytes, ser_ctx)
     assert obj == obj2
 
-    dek = client.get_dek("kek1", _SUBJECT, version=-1)
+    dek = dek_client.get_dek("kek1", _SUBJECT, version=-1)
     assert dek.version == 2
 
     # advance 2 days
     now = datetime.now() + timedelta(days=2)
     executor.clock.fixed_now = int(round(now.timestamp() * 1000))
 
-    bytes = ser(obj, ser_ctx)
+    obj_bytes = ser(obj, ser_ctx)
 
     # reset encrypted fields
     obj['stringField'] = 'hi'
 
-    obj2 = deser(bytes, ser_ctx)
+    obj2 = deser(obj_bytes, ser_ctx)
     assert obj == obj2
 
-    dek = client.get_dek("kek1", _SUBJECT, version=-1)
+    dek = dek_client.get_dek("kek1", _SUBJECT, version=-1)
     assert dek.version == 3
-
-
-
-
 
 
 def test_avro_encryption_f1_preserialized():
@@ -954,7 +950,6 @@ def test_avro_encryption_f1_preserialized():
 
     conf = {'url': _BASE_URL}
     client = SchemaRegistryClient.new_client(conf)
-    ser_conf = {'auto.register.schemas': False, 'use.latest.version': True}
     rule_conf = {'secret': 'mysecret'}
     schema = {
         'type': 'record',
@@ -996,13 +991,131 @@ def test_avro_encryption_f1_preserialized():
     ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
     deser = AvroDeserializer(client, rule_conf=rule_conf)
 
-    client: DekRegistryClient = executor.client
-    client.register_kek("kek1", "local-kms", "mykey")
+    dek_client: DekRegistryClient = executor.client
+    dek_client.register_kek("kek1", "local-kms", "mykey")
 
-    encryptedDek = "07V2ndh02DA73p+dTybwZFm7DKQSZN1tEwQh+FoX1DZLk4Yj2LLu4omYjp/84tAg3BYlkfGSz+zZacJHIE4="
-    client.register_dek("kek1", _SUBJECT, encryptedDek)
+    encrypted_dek = "07V2ndh02DA73p+dTybwZFm7DKQSZN1tEwQh+FoX1DZLk4Yj2LLu4omYjp/84tAg3BYlkfGSz+zZacJHIE4="
+    dek_client.register_dek("kek1", _SUBJECT, encrypted_dek)
 
     obj_bytes = bytes([0, 0, 0, 0, 1, 104, 122, 103, 121, 47, 106, 70, 78, 77, 86, 47, 101, 70, 105, 108, 97, 72, 114, 77, 121, 101, 66, 103, 100, 97, 86, 122, 114, 82, 48, 117, 100, 71, 101, 111, 116, 87, 56, 99, 65, 47, 74, 97, 108, 55, 117, 107, 114, 43, 77, 47, 121, 122])
+
+    obj2 = deser(obj_bytes, ser_ctx)
+    assert obj == obj2
+
+
+def test_avro_encryption_deterministic_f1_preserialized():
+    executor = FieldEncryptionExecutor.register_with_clock(FakeClock())
+
+    conf = {'url': _BASE_URL}
+    client = SchemaRegistryClient.new_client(conf)
+    rule_conf = {'secret': 'mysecret'}
+    schema = {
+        'type': 'record',
+        'name': 'f1Schema',
+        'fields': [
+            {'name': 'f1', 'type': 'string', 'confluent:tags': ['PII']}
+        ]
+    }
+
+    rule = Rule(
+        "test-encrypt",
+        "",
+        RuleKind.TRANSFORM,
+        RuleMode.WRITEREAD,
+        "ENCRYPT",
+        ["PII"],
+        RuleParams({
+            "encrypt.kek.name": "kek1",
+            "encrypt.kms.type": "local-kms",
+            "encrypt.kms.key.id": "mykey",
+            "encrypt.dek.algorithm": "AES256_SIV",
+        }),
+        None,
+        None,
+        "ERROR,ERROR",
+        False
+    )
+    client.register_schema(_SUBJECT, Schema(
+        json.dumps(schema),
+        "AVRO",
+        [],
+        None,
+        RuleSet(None, [rule])
+    ))
+
+    obj = {
+        'f1': 'hello world'
+    }
+
+    ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
+    deser = AvroDeserializer(client, rule_conf=rule_conf)
+
+    dek_client: DekRegistryClient = executor.client
+    dek_client.register_kek("kek1", "local-kms", "mykey")
+
+    encrypted_dek = "YSx3DTlAHrmpoDChquJMifmPntBzxgRVdMzgYL82rgWBKn7aUSnG+WIu9ozBNS3y2vXd++mBtK07w4/W/G6w0da39X9hfOVZsGnkSvry/QRht84V8yz3dqKxGMOK5A=="
+    dek_client.register_dek("kek1", _SUBJECT, encrypted_dek, algorithm="AES256_SIV")
+
+    obj_bytes = bytes([0, 0, 0, 0, 1, 72, 68, 54, 89, 116, 120, 114, 108, 66, 110, 107, 84, 87, 87, 57, 78, 54, 86, 98, 107, 51, 73, 73, 110, 106, 87, 72, 56, 49, 120, 109, 89, 104, 51, 107, 52, 100])
+
+    obj2 = deser(obj_bytes, ser_ctx)
+    assert obj == obj2
+
+
+def test_avro_encryption_dek_rotation_f1_preserialized():
+    executor = FieldEncryptionExecutor.register_with_clock(FakeClock())
+
+    conf = {'url': _BASE_URL}
+    client = SchemaRegistryClient.new_client(conf)
+    rule_conf = {'secret': 'mysecret'}
+    schema = {
+        'type': 'record',
+        'name': 'f1Schema',
+        'fields': [
+            {'name': 'f1', 'type': 'string', 'confluent:tags': ['PII']}
+        ]
+    }
+
+    rule = Rule(
+        "test-encrypt",
+        "",
+        RuleKind.TRANSFORM,
+        RuleMode.WRITEREAD,
+        "ENCRYPT",
+        ["PII"],
+        RuleParams({
+            "encrypt.kek.name": "kek1",
+            "encrypt.kms.type": "local-kms",
+            "encrypt.kms.key.id": "mykey",
+            "encrypt.dek.expiry.days": "1",
+        }),
+        None,
+        None,
+        "ERROR,ERROR",
+        False
+    )
+    client.register_schema(_SUBJECT, Schema(
+        json.dumps(schema),
+        "AVRO",
+        [],
+        None,
+        RuleSet(None, [rule])
+    ))
+
+    obj = {
+        'f1': 'hello world'
+    }
+
+    ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
+    deser = AvroDeserializer(client, rule_conf=rule_conf)
+
+    dek_client: DekRegistryClient = executor.client
+    dek_client.register_kek("kek1", "local-kms", "mykey")
+
+    encrypted_dek = "W/v6hOQYq1idVAcs1pPWz9UUONMVZW4IrglTnG88TsWjeCjxmtRQ4VaNe/I5dCfm2zyY9Cu0nqdvqImtUk4="
+    dek_client.register_dek("kek1", _SUBJECT, encrypted_dek, algorithm="AES256_GCM")
+
+    obj_bytes = bytes([0, 0, 0, 0, 1, 120, 65, 65, 65, 65, 65, 65, 71, 52, 72, 73, 54, 98, 49, 110, 88, 80, 88, 113, 76, 121, 71, 56, 99, 73, 73, 51, 53, 78, 72, 81, 115, 101, 113, 113, 85, 67, 100, 43, 73, 101, 76, 101, 70, 86, 65, 101, 78, 112, 83, 83, 51, 102, 120, 80, 110, 74, 51, 50, 65, 61])
 
     obj2 = deser(obj_bytes, ser_ctx)
     assert obj == obj2

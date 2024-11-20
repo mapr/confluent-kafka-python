@@ -68,7 +68,7 @@ class FieldEncryptionExecutor(FieldRuleExecutor):
         dek_expiry_days = self._get_dek_expiry_days(ctx)
         transform = FieldEncryptionExecutorTransform(
             self, cryptor, kek_name, dek_expiry_days)
-        return transform._field_transform
+        return transform.transform
 
     def close(self):
         if self.client is not None:
@@ -308,7 +308,7 @@ class FieldEncryptionExecutorTransform(object):
                 and dek is not None
                 and (now - dek.ts) / MILLIS_IN_DAY > self._dek_expiry_days)
 
-    def _field_transform(self, ctx: RuleContext, field_ctx: FieldContext, field_value: Any) -> Any:
+    def transform(self, ctx: RuleContext, field_ctx: FieldContext, field_value: Any) -> Any:
         if field_value is None:
             return None
         if ctx.rule_mode == RuleMode.WRITE:

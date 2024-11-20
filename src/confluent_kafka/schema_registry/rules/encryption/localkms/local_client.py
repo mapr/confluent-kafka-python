@@ -17,7 +17,7 @@ from typing import Optional
 
 import tink
 from hkdf import hkdf_extract, hkdf_expand
-from tink import KmsClient, prf, aead
+from tink import KmsClient, aead
 from tink.core import Registry
 from tink.proto import common_pb2, tink_pb2, hkdf_prf_pb2, aes_gcm_pb2
 
