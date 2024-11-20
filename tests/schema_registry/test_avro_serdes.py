@@ -31,6 +31,8 @@ from confluent_kafka.schema_registry.rules.encryption.awskms.aws_driver import \
     AwsKmsDriver
 from confluent_kafka.schema_registry.rules.encryption.azurekms.azure_driver import \
     AzureKmsDriver
+from confluent_kafka.schema_registry.rules.encryption.dek_registry.dek_registry_client import \
+    DekRegistryClient
 from confluent_kafka.schema_registry.rules.encryption.encrypt_executor import \
     FieldEncryptionExecutor
 from confluent_kafka.schema_registry.rules.encryption.gcpkms.gcp_driver import \
@@ -785,7 +787,7 @@ def test_avro_encryption():
     }
 
     rule = Rule(
-        "test-cel",
+        "test-encrypt",
         "",
         RuleKind.TRANSFORM,
         RuleMode.WRITEREAD,
@@ -828,6 +830,65 @@ def test_avro_encryption():
     deser = AvroDeserializer(client, rule_conf=rule_conf)
     field_encryption_executor.client = dek_client
     obj2 = deser(bytes, ser_ctx)
+    assert obj == obj2
+
+
+def test_avro_encryption_f1_preserialized():
+    executor = FieldEncryptionExecutor.register_with_clock('clock')
+
+    conf = {'url': _BASE_URL}
+    client = SchemaRegistryClient.new_client(conf)
+    ser_conf = {'auto.register.schemas': False, 'use.latest.version': True}
+    rule_conf = {'secret': 'mysecret'}
+    schema = {
+        'type': 'record',
+        'name': 'f1Schema',
+        'fields': [
+            {'name': 'f1', 'type': 'string', 'confluent:tags': ['PII']}
+        ]
+    }
+
+    rule = Rule(
+        "test-encrypt",
+        "",
+        RuleKind.TRANSFORM,
+        RuleMode.WRITEREAD,
+        "ENCRYPT",
+        ["PII"],
+        RuleParams({
+            "encrypt.kek.name": "kek1",
+            "encrypt.kms.type": "local-kms",
+            "encrypt.kms.key.id": "mykey"
+        }),
+        None,
+        None,
+        "ERROR,ERROR",
+        False
+    )
+    client.register_schema(_SUBJECT, Schema(
+        json.dumps(schema),
+        "AVRO",
+        [],
+        None,
+        RuleSet(None, [rule])
+    ))
+
+    obj = {
+        'f1': 'hello world'
+    }
+
+    ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
+    deser = AvroDeserializer(client, rule_conf=rule_conf)
+
+    client: DekRegistryClient = executor.client
+    client.register_kek("kek1", "local-kms", "mykey")
+
+    encryptedDek = "07V2ndh02DA73p+dTybwZFm7DKQSZN1tEwQh+FoX1DZLk4Yj2LLu4omYjp/84tAg3BYlkfGSz+zZacJHIE4="
+    client.register_dek("kek1", _SUBJECT, encryptedDek)
+
+    obj_bytes = bytes([0, 0, 0, 0, 1, 104, 122, 103, 121, 47, 106, 70, 78, 77, 86, 47, 101, 70, 105, 108, 97, 72, 114, 77, 121, 101, 66, 103, 100, 97, 86, 122, 114, 82, 48, 117, 100, 71, 101, 111, 116, 87, 56, 99, 65, 47, 74, 97, 108, 55, 117, 107, 114, 43, 77, 47, 121, 122])
+
+    obj2 = deser(obj_bytes, ser_ctx)
     assert obj == obj2
 
 

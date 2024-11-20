@@ -25,7 +25,7 @@ from confluent_kafka.schema_registry import SchemaRegistryError, RuleMode, \
     _MAGIC_BYTE
 from confluent_kafka.schema_registry.rule_registry import RuleRegistry
 from confluent_kafka.schema_registry.rules.encryption.dek_registry.dek_registry_client import \
-    DekRegistryClient, Kek, KekId, DekId, Dek
+    DekRegistryClient, Kek, KekId, DekId, Dek, DekAlgorithm
 from confluent_kafka.schema_registry.rules.encryption.kms_driver_registry import \
     get_kms_driver, KmsDriver
 from confluent_kafka.schema_registry.serde import RuleContext, \
@@ -41,12 +41,6 @@ ENCRYPT_DEK_ALGORITHM = "encrypt.dek.algorithm"
 ENCRYPT_DEK_EXPIRY_DAYS = "encrypt.dek.expiry.days"
 
 MILLIS_IN_DAY = 24 * 60 * 60 * 1000
-
-
-class DekFormat(Enum):
-    AES128_GCM = "AES128_GCM"
-    AES256_GCM = "AES256_GCM"
-    AES256_SIV = "AES256_SIV"
 
 
 class FieldEncryptionExecutor(FieldRuleExecutor):
@@ -76,10 +70,10 @@ class FieldEncryptionExecutor(FieldRuleExecutor):
             self.client.__exit__()
 
     def _get_cryptor(self, ctx: RuleContext) -> 'Cryptor':
-        dek_algorithm = DekFormat.AES256_GCM
+        dek_algorithm = DekAlgorithm.AES256_GCM
         dek_algorithm_str = ctx.get_parameter(ENCRYPT_DEK_ALGORITHM)
         if dek_algorithm_str is not None:
-            dek_algorithm = DekFormat[dek_algorithm_str]
+            dek_algorithm = DekAlgorithm[dek_algorithm_str]
         cryptor = Cryptor(dek_algorithm)
         return cryptor
 
@@ -118,16 +112,16 @@ class FieldEncryptionExecutor(FieldRuleExecutor):
 class Cryptor:
     EMPTY_AAD = b""
 
-    def __init__(self, dek_format: DekFormat):
+    def __init__(self, dek_format: DekAlgorithm):
         self.dek_format = dek_format
-        self.is_deterministic = dek_format == DekFormat.AES256_SIV
+        self.is_deterministic = dek_format == DekAlgorithm.AES256_SIV
         self.registry = Registry()
 
-        if dek_format is DekFormat.AES128_GCM:
+        if dek_format is DekAlgorithm.AES128_GCM:
             self.key_template = aead.aead_key_templates.AES128_GCM_RAW
-        elif dek_format is DekFormat.AES256_GCM:
+        elif dek_format is DekAlgorithm.AES256_GCM:
             self.key_template = aead.aead_key_templates.AES256_GCM_RAW
-        elif dek_format is DekFormat.AES256_SIV:
+        elif dek_format is DekAlgorithm.AES256_SIV:
             # Construct AES256_SIV_RAW since it doesn't exist in Tink
             key_format = aes_siv_pb2.AesSivKeyFormat(
                 # Generate 2 256-bit keys
