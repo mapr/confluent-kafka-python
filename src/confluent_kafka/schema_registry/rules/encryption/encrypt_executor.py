@@ -13,7 +13,6 @@
 # limitations under the License.
 import base64
 import time
-from enum import Enum
 from typing import Optional, Tuple, Any
 
 from tink import aead, daead, KmsClient, kms_client_from_uri, \
@@ -43,11 +42,17 @@ ENCRYPT_DEK_EXPIRY_DAYS = "encrypt.dek.expiry.days"
 MILLIS_IN_DAY = 24 * 60 * 60 * 1000
 
 
+class Clock(object):
+    def now(self) -> int:
+        return int(round(time.time() * 1000))
+
+
 class FieldEncryptionExecutor(FieldRuleExecutor):
 
-    def __init__(self):
+    def __init__(self, clock: Clock = Clock()):
         self.client = None
         self.config = None
+        self.clock = clock
         pass
 
     def configure(self, client_conf: dict, rule_conf: dict):
@@ -102,9 +107,8 @@ class FieldEncryptionExecutor(FieldRuleExecutor):
         RuleRegistry.register_rule_executor(FieldEncryptionExecutor())
 
     @classmethod
-    # TODO RAY fix clock type
-    def register_with_clock(cls, clock: Any) -> 'FieldEncryptionExecutor':
-        executor = FieldEncryptionExecutor()
+    def register_with_clock(cls, clock: Clock) -> 'FieldEncryptionExecutor':
+        executor = FieldEncryptionExecutor(clock)
         RuleRegistry.register_rule_executor(executor)
         return executor
 
@@ -298,8 +302,7 @@ class FieldEncryptionExecutorTransform(object):
             raise RuleError(f"could not register dek for kek {key.kek_name}, subject {key.subject}") from e
 
     def _is_expired(self, ctx: RuleContext, dek: Optional[Dek]) -> bool:
-        # TODO RAY check
-        now = round(time.time() * 1000)
+        now = self._executor.clock.now()
         return (ctx.rule_mode != RuleMode.READ
                 and self._dek_expiry_days > 0
                 and dek is not None

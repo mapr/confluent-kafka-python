@@ -16,6 +16,8 @@
 # limitations under the License.
 #
 import json
+import time
+from datetime import datetime, timedelta
 
 import pytest
 from fastavro._logical_readers import UUID
@@ -34,7 +36,7 @@ from confluent_kafka.schema_registry.rules.encryption.azurekms.azure_driver impo
 from confluent_kafka.schema_registry.rules.encryption.dek_registry.dek_registry_client import \
     DekRegistryClient
 from confluent_kafka.schema_registry.rules.encryption.encrypt_executor import \
-    FieldEncryptionExecutor
+    FieldEncryptionExecutor, Clock
 from confluent_kafka.schema_registry.rules.encryption.gcpkms.gcp_driver import \
     GcpKmsDriver
 from confluent_kafka.schema_registry.rules.encryption.hcvault.hcvault_driver import \
@@ -48,9 +50,19 @@ from confluent_kafka.schema_registry.schema_registry_client import RuleSet, \
 from confluent_kafka.schema_registry.serde import RuleConditionError
 from confluent_kafka.serialization import SerializationContext, MessageField
 
+
+class FakeClock(Clock):
+
+    def __init__(self):
+        self.fixed_now = int(round(time.time() * 1000))
+
+    def now(self) -> int:
+        return self.fixed_now
+
+
 CelExecutor.register()
 CelFieldExecutor.register()
-field_encryption_executor = FieldEncryptionExecutor.register_with_clock('clock')
+field_encryption_executor = FieldEncryptionExecutor.register_with_clock(FakeClock())
 AwsKmsDriver.register()
 AzureKmsDriver.register()
 GcpKmsDriver.register()
@@ -833,8 +845,112 @@ def test_avro_encryption():
     assert obj == obj2
 
 
+def test_avro_encryption_dek_rotation():
+    executor = FieldEncryptionExecutor.register_with_clock(FakeClock())
+
+    conf = {'url': _BASE_URL}
+    client = SchemaRegistryClient.new_client(conf)
+    ser_conf = {'auto.register.schemas': False, 'use.latest.version': True}
+    rule_conf = {'secret': 'mysecret'}
+    schema = {
+        'type': 'record',
+        'name': 'test',
+        'fields': [
+            {'name': 'intField', 'type': 'int'},
+            {'name': 'doubleField', 'type': 'double'},
+            {'name': 'stringField', 'type': 'string', 'confluent:tags': ['PII']},
+            {'name': 'booleanField', 'type': 'boolean'},
+            {'name': 'bytesField', 'type': 'bytes'},
+        ]
+    }
+
+    rule = Rule(
+        "test-encrypt",
+        "",
+        RuleKind.TRANSFORM,
+        RuleMode.WRITEREAD,
+        "ENCRYPT",
+        ["PII"],
+        RuleParams({
+            "encrypt.kek.name": "kek1",
+            "encrypt.kms.type": "local-kms",
+            "encrypt.kms.key.id": "mykey",
+            "encrypt.dek.expiry.days": "1"
+        }),
+        None,
+        None,
+        "ERROR,NONE",
+        False
+    )
+    client.register_schema(_SUBJECT, Schema(
+        json.dumps(schema),
+        "AVRO",
+        [],
+        None,
+        RuleSet(None, [rule])
+    ))
+
+    obj = {
+        'intField': 123,
+        'doubleField': 45.67,
+        'stringField': 'hi',
+        'booleanField': True,
+        'bytesField': b'foobar',
+    }
+    ser = AvroSerializer(client, schema_str=None, conf=ser_conf, rule_conf=rule_conf)
+    dek_client = executor.client
+    ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
+    bytes = ser(obj, ser_ctx)
+
+    # reset encrypted fields
+    obj['stringField'] = 'hi'
+
+    deser = AvroDeserializer(client, rule_conf=rule_conf)
+    executor.client = dek_client
+    obj2 = deser(bytes, ser_ctx)
+    assert obj == obj2
+
+    client: DekRegistryClient = executor.client
+    dek = client.get_dek("kek1", _SUBJECT, version=-1)
+    assert dek.version == 1
+
+    # advance 2 days
+    now = datetime.now() + timedelta(days=2)
+    executor.clock.fixed_now = int(round(now.timestamp() * 1000))
+
+    bytes = ser(obj, ser_ctx)
+
+    # reset encrypted fields
+    obj['stringField'] = 'hi'
+
+    obj2 = deser(bytes, ser_ctx)
+    assert obj == obj2
+
+    dek = client.get_dek("kek1", _SUBJECT, version=-1)
+    assert dek.version == 2
+
+    # advance 2 days
+    now = datetime.now() + timedelta(days=2)
+    executor.clock.fixed_now = int(round(now.timestamp() * 1000))
+
+    bytes = ser(obj, ser_ctx)
+
+    # reset encrypted fields
+    obj['stringField'] = 'hi'
+
+    obj2 = deser(bytes, ser_ctx)
+    assert obj == obj2
+
+    dek = client.get_dek("kek1", _SUBJECT, version=-1)
+    assert dek.version == 3
+
+
+
+
+
+
 def test_avro_encryption_f1_preserialized():
-    executor = FieldEncryptionExecutor.register_with_clock('clock')
+    executor = FieldEncryptionExecutor.register_with_clock(FakeClock())
 
     conf = {'url': _BASE_URL}
     client = SchemaRegistryClient.new_client(conf)

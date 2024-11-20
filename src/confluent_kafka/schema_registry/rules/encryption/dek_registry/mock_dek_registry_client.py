@@ -83,7 +83,8 @@ class MockDekRegistryClient(DekRegistryClient):
             subject=subject,
             version=version,
             algorithm=algorithm,
-            encrypted_key_material=encrypted_key_material
+            encrypted_key_material=encrypted_key_material,
+            ts=int(round(time.time() * 1000))
         )
 
         self._dek_cache.set(cache_key, dek)
