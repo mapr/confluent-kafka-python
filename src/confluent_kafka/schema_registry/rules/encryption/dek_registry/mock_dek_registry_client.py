@@ -90,8 +90,8 @@ class MockDekRegistryClient(DekRegistryClient):
 
         return dek
 
-    def get_dek(self, kek_name: str, subject: str, deleted: bool = False,
-        algorithm: DekAlgorithm = DekAlgorithm.AES256_GCM, version: int = 1) -> Dek:
+    def get_dek(self, kek_name: str, subject: str, algorithm: DekAlgorithm = DekAlgorithm.AES256_GCM,
+        version: int = 1, deleted: bool = False) -> Dek:
         if version == -1:
             # Find the latest version
             latest_version = 0
@@ -109,7 +109,7 @@ class MockDekRegistryClient(DekRegistryClient):
             subject=subject,
             version=version,
             algorithm=algorithm,
-            deleted=deleted
+            deleted=False
         )
         dek = self._dek_cache.get_dek(cache_key)
         if dek is not None:

@@ -107,6 +107,13 @@ class FieldEncryptionExecutor(FieldRuleExecutor):
     def register(cls):
         RuleRegistry.register_rule_executor(FieldEncryptionExecutor())
 
+    @classmethod
+    # TODO RAY fix clock type
+    def register_with_clock(cls, clock: Any) -> 'FieldEncryptionExecutor':
+        executor = FieldEncryptionExecutor()
+        RuleRegistry.register_rule_executor(executor)
+        return executor
+
 
 class Cryptor:
     EMPTY_AAD = b""
@@ -249,7 +256,7 @@ class FieldEncryptionExecutorTransform(object):
                 primitive = self._get_aead(self._executor.config, self._kek)
                 raw_dek = self._cryptor.generate_key()
                 encrypted_dek = primitive.encrypt(raw_dek, self._cryptor.EMPTY_AAD)
-            new_version = dek.version + 1 if is_expired else None
+            new_version = dek.version + 1 if is_expired else 1
             new_dek_id = DekId(
                 self._kek_name,
                 ctx.subject,

@@ -288,13 +288,15 @@ class BaseSerde(object):
             if source.rule_set is not None:
                 rules = source.rule_set.migration_rules
                 if rules is not None:
-                    rules = rules[:].reverse()
+                    rules = rules[:]
+                    rules.reverse()
         else:
             if target.rule_set is not None:
                 rules = target.rule_set.domain_rules
                 if rule_mode == RuleMode.READ:
                     # Execute read rules in reverse order for symmetry
-                    rules = rules[:].reverse()
+                    rules = rules[:]
+                    rules.reverse()
 
         if rules is None:
             return message

@@ -48,7 +48,7 @@ from confluent_kafka.serialization import SerializationContext, MessageField
 
 CelExecutor.register()
 CelFieldExecutor.register()
-FieldEncryptionExecutor.register()
+field_encryption_executor = FieldEncryptionExecutor.register_with_clock('clock')
 AwsKmsDriver.register()
 AzureKmsDriver.register()
 GcpKmsDriver.register()
@@ -772,6 +772,7 @@ def test_avro_encryption():
         'bytesField': b'foobar',
     }
     ser = AvroSerializer(client, schema_str=None, conf=ser_conf, rule_conf=rule_conf)
+    dek_client = field_encryption_executor.client
     ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
     bytes = ser(obj, ser_ctx)
 
@@ -780,6 +781,7 @@ def test_avro_encryption():
     obj['bytesField'] = b'foobar'
 
     deser = AvroDeserializer(client, rule_conf=rule_conf)
+    field_encryption_executor.client = dek_client
     obj2 = deser(bytes, ser_ctx)
     assert obj == obj2
 
