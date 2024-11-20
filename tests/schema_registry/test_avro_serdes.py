@@ -62,7 +62,6 @@ class FakeClock(Clock):
 
 CelExecutor.register()
 CelFieldExecutor.register()
-field_encryption_executor = FieldEncryptionExecutor.register_with_clock(FakeClock())
 AwsKmsDriver.register()
 AzureKmsDriver.register()
 GcpKmsDriver.register()
@@ -782,6 +781,8 @@ def test_avro_cel_field_condition_fail():
 
 
 def test_avro_encryption():
+    executor = FieldEncryptionExecutor.register_with_clock(FakeClock())
+
     conf = {'url': _BASE_URL}
     client = SchemaRegistryClient.new_client(conf)
     ser_conf = {'auto.register.schemas': False, 'use.latest.version': True}
@@ -831,7 +832,7 @@ def test_avro_encryption():
         'bytesField': b'foobar',
     }
     ser = AvroSerializer(client, schema_str=None, conf=ser_conf, rule_conf=rule_conf)
-    dek_client = field_encryption_executor.client
+    dek_client = executor.client
     ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
     obj_bytes = ser(obj, ser_ctx)
 
@@ -840,7 +841,7 @@ def test_avro_encryption():
     obj['bytesField'] = b'foobar'
 
     deser = AvroDeserializer(client, rule_conf=rule_conf)
-    field_encryption_executor.client = dek_client
+    executor.client = dek_client
     obj2 = deser(obj_bytes, ser_ctx)
     assert obj == obj2
 
@@ -1117,6 +1118,148 @@ def test_avro_encryption_dek_rotation_f1_preserialized():
 
     obj_bytes = bytes([0, 0, 0, 0, 1, 120, 65, 65, 65, 65, 65, 65, 71, 52, 72, 73, 54, 98, 49, 110, 88, 80, 88, 113, 76, 121, 71, 56, 99, 73, 73, 51, 53, 78, 72, 81, 115, 101, 113, 113, 85, 67, 100, 43, 73, 101, 76, 101, 70, 86, 65, 101, 78, 112, 83, 83, 51, 102, 120, 80, 110, 74, 51, 50, 65, 61])
 
+    obj2 = deser(obj_bytes, ser_ctx)
+    assert obj == obj2
+
+
+def test_avro_encryption_references():
+    executor = FieldEncryptionExecutor.register_with_clock(FakeClock())
+
+    conf = {'url': _BASE_URL}
+    client = SchemaRegistryClient.new_client(conf)
+    ser_conf = {'auto.register.schemas': False, 'use.latest.version': True}
+    rule_conf = {'secret': 'mysecret'}
+
+    referenced = {
+        'intField': 123,
+        'doubleField': 45.67,
+        'stringField': 'hi',
+        'booleanField': True,
+        'bytesField': b'foobar',
+    }
+    obj = {
+        'refField': referenced
+    }
+    ref_schema = {
+        'type': 'record',
+        'name': 'test',
+        'fields': [
+            {'name': 'intField', 'type': 'int'},
+            {'name': 'doubleField', 'type': 'double'},
+            {'name': 'stringField', 'type': 'string'},
+            {'name': 'booleanField', 'type': 'boolean'},
+            {'name': 'bytesField', 'type': 'bytes'},
+        ]
+    }
+    client.register_schema('ref', Schema(json.dumps(ref_schema)))
+    schema = {
+        'type': 'record',
+        'name': 'test',
+        'fields': [
+            {'name': 'refField', 'type': 'ref'},
+        ]
+    }
+    refs = [SchemaReference('ref', 'ref', 1)]
+    rule = Rule(
+        "test-encrypt",
+        "",
+        RuleKind.TRANSFORM,
+        RuleMode.WRITEREAD,
+        "ENCRYPT",
+        ["PII"],
+        RuleParams({
+            "encrypt.kek.name": "kek1",
+            "encrypt.kms.type": "local-kms",
+            "encrypt.kms.key.id": "mykey"
+        }),
+        None,
+        None,
+        "ERROR,NONE",
+        False
+    )
+    client.register_schema(_SUBJECT, Schema(
+        json.dumps(schema),
+        "AVRO",
+        refs,
+        None,
+        RuleSet(None, [rule])
+    ))
+
+    ser = AvroSerializer(client, schema_str=None, conf=ser_conf, rule_conf=rule_conf)
+    ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
+    obj_bytes = ser(obj, ser_ctx)
+
+    # reset encrypted fields
+    obj['refField']['stringField'] = 'hi'
+    obj['refField']['bytesField'] = b'foobar'
+
+    deser = AvroDeserializer(client, rule_conf=rule_conf)
+    obj2 = deser(obj_bytes, ser_ctx)
+    assert obj == obj2
+
+
+def test_avro_encryption_with_union():
+    executor = FieldEncryptionExecutor.register_with_clock(FakeClock())
+
+    conf = {'url': _BASE_URL}
+    client = SchemaRegistryClient.new_client(conf)
+    ser_conf = {'auto.register.schemas': False, 'use.latest.version': True}
+    rule_conf = {'secret': 'mysecret'}
+    schema = {
+        'type': 'record',
+        'name': 'test',
+        'fields': [
+            {'name': 'intField', 'type': 'int'},
+            {'name': 'doubleField', 'type': 'double'},
+            {'name': 'stringField', 'type': ['null', 'string'], 'confluent:tags': ['PII']},
+            {'name': 'booleanField', 'type': 'boolean'},
+            {'name': 'bytesField', 'type': ['null', 'bytes'], 'confluent:tags': ['PII']},
+        ]
+    }
+
+    rule = Rule(
+        "test-encrypt",
+        "",
+        RuleKind.TRANSFORM,
+        RuleMode.WRITEREAD,
+        "ENCRYPT",
+        ["PII"],
+        RuleParams({
+            "encrypt.kek.name": "kek1",
+            "encrypt.kms.type": "local-kms",
+            "encrypt.kms.key.id": "mykey"
+        }),
+        None,
+        None,
+        "ERROR,NONE",
+        False
+    )
+    client.register_schema(_SUBJECT, Schema(
+        json.dumps(schema),
+        "AVRO",
+        [],
+        None,
+        RuleSet(None, [rule])
+    ))
+
+    obj = {
+        'intField': 123,
+        'doubleField': 45.67,
+        'stringField': 'hi',
+        'booleanField': True,
+        'bytesField': b'foobar',
+    }
+    ser = AvroSerializer(client, schema_str=None, conf=ser_conf, rule_conf=rule_conf)
+    dek_client = executor.client
+    ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
+    obj_bytes = ser(obj, ser_ctx)
+
+    # reset encrypted fields
+    obj['stringField'] = 'hi'
+    obj['bytesField'] = b'foobar'
+
+    deser = AvroDeserializer(client, rule_conf=rule_conf)
+    executor.client = dek_client
     obj2 = deser(obj_bytes, ser_ctx)
     assert obj == obj2
 
