@@ -378,7 +378,7 @@ class AvroSerializer(BaseSerializer):
         named_schemas = _resolve_named_schema(schema, self._registry)
         prepared_schema = _schema_loads(schema.schema_str)
         parsed_schema = parse_schema(
-            loads(prepared_schema.schema_str), named_schemas=named_schemas)
+            loads(prepared_schema.schema_str), named_schemas=named_schemas, expand=True)
 
         self._parsed_schemas.set(schema, parsed_schema)
         return parsed_schema
@@ -604,7 +604,7 @@ class AvroDeserializer(BaseDeserializer):
         named_schemas = _resolve_named_schema(schema, self._registry)
         prepared_schema = _schema_loads(schema.schema_str)
         parsed_schema = parse_schema(
-            loads(prepared_schema.schema_str), named_schemas=named_schemas)
+            loads(prepared_schema.schema_str), named_schemas=named_schemas, expand=True)
 
         self._parsed_schemas.set(schema, parsed_schema)
         return parsed_schema

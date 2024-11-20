@@ -178,6 +178,51 @@ def test_avro_serialize_references():
     assert obj == obj2
 
 
+def test_avro_serialize_union_with_references():
+    conf = {'url': _BASE_URL}
+    client = SchemaRegistryClient.new_client(conf)
+    ser_conf = {'auto.register.schemas': False, 'use.latest.version': True}
+
+    obj = {
+        'intField': 123,
+        'doubleField': 45.67,
+        'stringField': 'hi',
+        'booleanField': True,
+        'bytesField': b'foobar',
+    }
+    ref_schema = {
+        'type': 'record',
+        'name': 'ref',
+        'fields': [
+            {'name': 'intField', 'type': 'int'},
+            {'name': 'doubleField', 'type': 'double'},
+            {'name': 'stringField', 'type': 'string'},
+            {'name': 'booleanField', 'type': 'boolean'},
+            {'name': 'bytesField', 'type': 'bytes'},
+        ]
+    }
+    client.register_schema('ref', Schema(json.dumps(ref_schema)))
+    ref2_schema = {
+        'type': 'record',
+        'name': 'ref2',
+        'fields': [
+            {'name': 'otherField', 'type': 'string'}
+        ]
+    }
+    client.register_schema('ref2', Schema(json.dumps(ref2_schema)))
+    schema = [ 'ref', 'ref2' ]
+    refs = [SchemaReference('ref', 'ref', 1), SchemaReference('ref2', 'ref2', 1)]
+    client.register_schema(_SUBJECT, Schema(json.dumps(schema), 'AVRO', refs))
+
+    ser = AvroSerializer(client, schema_str=None, conf=ser_conf)
+    ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
+    bytes = ser(obj, ser_ctx)
+
+    deser = AvroDeserializer(client)
+    obj2 = deser(bytes, ser_ctx)
+    assert obj == obj2
+
+
 def test_avro_schema_evolution():
     conf = {'url': _BASE_URL}
     client = SchemaRegistryClient.new_client(conf)
