@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import datetime
+import uuid
 
 import celpy
 from celpy import celtypes
@@ -29,6 +31,10 @@ from confluent_kafka.schema_registry.serde import RuleExecutor, RuleContext, \
     FieldContext
 
 from google.protobuf import message
+
+# A date logical type annotates an Avro int, where the int stores the number
+# of days from the unix epoch, 1 January 1970 (ISO calendar).
+DAYS_SHIFT = datetime.date(1970, 1, 1).toordinal()
 
 
 class CelExecutor(RuleExecutor):
@@ -131,7 +137,17 @@ def _value_to_cel(msg: Any) -> Any:
         return celtypes.DoubleType(msg)
     elif isinstance(msg, bool):
         return celtypes.BoolType(msg)
+    elif isinstance(msg, datetime.datetime):
+        return celtypes.TimestampType(msg)
+    elif isinstance(msg, datetime.timedelta):
+        return celtypes.DurationType(msg)
+    if isinstance(msg, datetime.date):
+        # convert date to int
+        return celtypes.IntType(msg.toordinal() - DAYS_SHIFT)
+    elif isinstance(msg, uuid.UUID):
+        return celtypes.StringType(str(msg))
     else:
+        # unsupported: time-millis, time-micros, decimal
         return msg
 
 

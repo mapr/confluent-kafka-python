@@ -18,6 +18,7 @@
 import json
 
 import pytest
+from fastavro._logical_readers import UUID
 
 from confluent_kafka.schema_registry import SchemaRegistryClient, \
     Schema
@@ -225,13 +226,6 @@ def test_avro_cel_condition():
     conf = {'url': _BASE_URL}
     client = SchemaRegistryClient.new_client(conf)
     ser_conf = {'auto.register.schemas': False, 'use.latest.version': True}
-    obj = {
-        'intField': 123,
-        'doubleField': 45.67,
-        'stringField': 'hi',
-        'booleanField': True,
-        'bytesField': b'foobar',
-    }
     schema = {
         'type': 'record',
         'name': 'test',
@@ -265,6 +259,73 @@ def test_avro_cel_condition():
         RuleSet(None, [rule])
     ))
 
+    obj = {
+        'intField': 123,
+        'doubleField': 45.67,
+        'stringField': 'hi',
+        'booleanField': True,
+        'bytesField': b'foobar',
+    }
+    ser = AvroSerializer(client, schema_str=None, conf=ser_conf)
+    ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
+    bytes = ser(obj, ser_ctx)
+
+    deser = AvroDeserializer(client)
+    obj2 = deser(bytes, ser_ctx)
+    assert obj == obj2
+
+
+def test_avro_cel_condition_logical_type():
+    conf = {'url': _BASE_URL}
+    client = SchemaRegistryClient.new_client(conf)
+    ser_conf = {'auto.register.schemas': False, 'use.latest.version': True}
+    schema = {
+        'type': 'record',
+        'name': 'test',
+        'fields': [
+            {'name': 'intField', 'type': 'int'},
+            {'name': 'doubleField', 'type': 'double'},
+            {'name': 'stringField',
+             'type': {
+                 'type': 'string',
+                 'logicalType': 'uuid'
+             }
+            },
+            {'name': 'booleanField', 'type': 'boolean'},
+            {'name': 'bytesField', 'type': 'bytes'},
+        ]
+    }
+
+    uuid = "550e8400-e29b-41d4-a716-446655440000"
+
+    rule = Rule(
+        "test-cel",
+        "",
+        RuleKind.CONDITION,
+        RuleMode.WRITE,
+        "CEL",
+        None,
+        None,
+        "message.stringField == '" + uuid + "'",
+        None,
+        None,
+        False
+    )
+    client.register_schema(_SUBJECT, Schema(
+        json.dumps(schema),
+        "AVRO",
+        [],
+        None,
+        RuleSet(None, [rule])
+    ))
+
+    obj = {
+        'intField': 123,
+        'doubleField': 45.67,
+        'stringField': UUID(uuid),
+        'booleanField': True,
+        'bytesField': b'foobar',
+    }
     ser = AvroSerializer(client, schema_str=None, conf=ser_conf)
     ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
     bytes = ser(obj, ser_ctx)
