@@ -56,8 +56,8 @@ class Kek:
     kms_props: Optional[KekKmsProps]
     doc: Optional[str]
     shared: Optional[bool]
-    ts: Optional[int]
-    deleted: Optional[bool]
+    ts: Optional[int] = _attrs_field(default=None)
+    deleted: Optional[bool] = _attrs_field(default=None)
 
     def to_dict(self) -> Dict[str, Any]:
         name = self.name
@@ -224,11 +224,11 @@ class Dek:
     version: Optional[int]
     algorithm: Optional[DekAlgorithm]
     encrypted_key_material: Optional[str]
-    encrypted_key_material_bytes: Optional[bytes] = _attrs_field(init=False, eq=False, order=False)
-    key_material: Optional[str]
-    key_material_bytes: Optional[bytes] = _attrs_field(init=False, eq=False, order=False)
-    ts: Optional[int]
-    deleted: Optional[bool]
+    encrypted_key_material_bytes: Optional[bytes] = _attrs_field(init=False, eq=False, order=False, default=None)
+    key_material: Optional[str] = _attrs_field(default=None)
+    key_material_bytes: Optional[bytes] = _attrs_field(init=False, eq=False, order=False, default=None)
+    ts: Optional[int] = _attrs_field(default=None)
+    deleted: Optional[bool] = _attrs_field(default=None)
 
     def get_encrypted_key_material_bytes(self) -> Optional[bytes]:
         if self.encrypted_key_material is None:
@@ -492,7 +492,7 @@ class DekRegistryClient(object):
             name=name,
             kms_type=kms_type,
             kms_key_id=kms_key_id,
-            kms_props=KekKmsProps.from_dict(kms_props),
+            kms_props=KekKmsProps.from_dict(kms_props) if kms_props is not None else None,
             doc=doc,
             shared=shared
         )
@@ -636,4 +636,10 @@ class DekRegistryClient(object):
         return dek
 
 
-
+    @staticmethod
+    def new_client(conf: dict) -> 'DekRegistryClient':
+        from .mock_dek_registry_client import MockDekRegistryClient
+        url = conf.get("url")
+        if url.startswith("mock://"):
+            return MockDekRegistryClient(conf)
+        return DekRegistryClient(conf)

@@ -57,7 +57,7 @@ class FieldEncryptionExecutor(FieldRuleExecutor):
         pass
 
     def configure(self, client_conf: dict, rule_conf: dict):
-        self.client = DekRegistryClient(client_conf)
+        self.client = DekRegistryClient.new_client(client_conf)
         self.config = rule_conf
 
     def type(self) -> str:
@@ -69,7 +69,7 @@ class FieldEncryptionExecutor(FieldRuleExecutor):
         dek_expiry_days = self._get_dek_expiry_days(ctx)
         transform = FieldEncryptionExecutorTransform(
             self, cryptor, kek_name, dek_expiry_days)
-        return transform.transform
+        return transform._field_transform
 
     def close(self):
         if self.client is not None:
@@ -140,9 +140,9 @@ class Cryptor:
 
     def encrypt(self, dek: bytes, plaintext: bytes, associated_data: bytes) -> bytes:
         key_data = tink_pb2.KeyData(
-            type_url = self.key_template.type_url,
-            value = dek,
-            key_material = tink_pb2.KeyData.SYMMETRIC
+            type_url=self.key_template.type_url,
+            value=dek,
+            key_material_type=tink_pb2.KeyData.SYMMETRIC
         )
         if self.is_deterministic:
             primitive = self.registry.primitive(key_data, daead.DeterministicAead)
@@ -153,9 +153,9 @@ class Cryptor:
 
     def decrypt(self, dek: bytes, ciphertext: bytes, associated_data: bytes) -> bytes:
         key_data = tink_pb2.KeyData(
-            type_url = self.key_template.type_url,
-            value = dek,
-            key_material = tink_pb2.KeyData.SYMMETRIC
+            type_url=self.key_template.type_url,
+            value=dek,
+            key_material_type=tink_pb2.KeyData.SYMMETRIC
         )
         if self.is_deterministic:
             primitive = self.registry.primitive(key_data, daead.DeterministicAead)
@@ -165,12 +165,13 @@ class Cryptor:
             return primitive.decrypt(ciphertext, associated_data)
 
 
-class FieldEncryptionExecutorTransform(FieldTransform):
+class FieldEncryptionExecutorTransform(object):
 
     def __init__(self, executor: FieldEncryptionExecutor, cryptor: Cryptor, kek_name: str, dek_expiry_days: int):
         self._executor = executor
         self._cryptor = cryptor
         self._kek_name = kek_name
+        self._kek = None
         self._dek_expiry_days = dek_expiry_days
 
     def _is_dek_rotated(self):
@@ -179,7 +180,6 @@ class FieldEncryptionExecutorTransform(FieldTransform):
     def _get_kek(self, ctx: RuleContext) -> Kek:
         if self._kek is None:
             self._kek = self._get_or_create_kek(ctx)
-            raise RuleError("no kek found")
         return self._kek
 
     def _get_or_create_kek(self, ctx: RuleContext) -> Kek:
@@ -187,7 +187,7 @@ class FieldEncryptionExecutorTransform(FieldTransform):
         kms_type = ctx.get_parameter(ENCRYPT_KMS_TYPE)
         kms_key_id = ctx.get_parameter(ENCRYPT_KMS_KEY_ID)
         kek_id = KekId(self._kek_name, False)
-        kek = self._retrive_kek_from_registry(kek_id)
+        kek = self._retrieve_kek_from_registry(kek_id)
         if kek is None:
             if is_read:
                 raise RuleError(f"no kek found for {self._kek_name} during consume")
@@ -198,7 +198,7 @@ class FieldEncryptionExecutorTransform(FieldTransform):
             kek = self._store_kek_to_registry(kek_id, kms_type, kms_key_id, False)
             if kek is None:
                 # handle conflicts (409)
-                kek = self._retrive_kek_from_registry(kek_id)
+                kek = self._retrieve_kek_from_registry(kek_id)
             if kek is None:
                 raise RuleError(f"no kek found for {self._kek_name} during produce")
         if kms_type and kek.kms_type != kms_type:
@@ -304,7 +304,7 @@ class FieldEncryptionExecutorTransform(FieldTransform):
                 and dek is not None
                 and (now - dek.ts) / MILLIS_IN_DAY > self._dek_expiry_days)
 
-    def transform(self, ctx: RuleContext, field_ctx: FieldContext, field_value: Any) -> Any:
+    def _field_transform(self, ctx: RuleContext, field_ctx: FieldContext, field_value: Any) -> Any:
         if field_value is None:
             return None
         if ctx.rule_mode == RuleMode.WRITE:

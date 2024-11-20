@@ -758,7 +758,7 @@ def _get_inline_tags_recursively(ns: str, name: str, schema: Optional[AvroSchema
                 field_name = field.get("name")
                 field_type = field.get("type")
                 if field_tags is not None and field_name is not None:
-                    tags[record_name].update(field_tags)
+                    tags[record_name + '.' + field_name].update(field_tags)
                 if field_type is not None:
                     _get_inline_tags_recursively(record_ns, record_name, field_type, tags)
 

@@ -15,6 +15,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+import time
 from typing import Dict
 
 from confluent_kafka.schema_registry import SchemaRegistryError
@@ -37,7 +38,7 @@ class MockDekRegistryClient(DekRegistryClient):
 
 
     def register_kek(self, name: str, kms_type: str, kms_key_id: str,
-        kms_props: Dict[str, str] = None, doc: str = None, shared: bool = False) -> Kek:
+        shared: bool = False, kms_props: Dict[str, str] = None, doc: str = None) -> Kek:
         cache_key = KekId(name=name, deleted=False)
         kek = self._kek_cache.get_kek(cache_key)
         if kek is not None:
@@ -47,7 +48,7 @@ class MockDekRegistryClient(DekRegistryClient):
             name=name,
             kms_type=kms_type,
             kms_key_id=kms_key_id,
-            kms_props=KekKmsProps.from_dict(kms_props),
+            kms_props=KekKmsProps.from_dict(kms_props) if kms_props is not None else None,
             doc=doc,
             shared=shared
         )

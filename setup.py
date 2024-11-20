@@ -28,7 +28,7 @@ SCHEMA_REGISTRY_REQUIRES = ['requests', 'attrs', 'cachetools', 'httpx']
 
 RULES_REQUIRES = ['azure-identity', 'azure-keyvault-keys',
                   'boto3', 'cel-python',
-                  'google-auth', 'google-api-core', 'google-cloud-kms',
+                  'google-auth', 'google-api-core', 'google-cloud-kms', 'hkdf',
                   'hvac', 'jsonata-python', 'tink'] + SCHEMA_REGISTRY_REQUIRES
 
 AVRO_REQUIRES = ['fastavro>=0.23.0,<1.0;python_version<"3.0"',

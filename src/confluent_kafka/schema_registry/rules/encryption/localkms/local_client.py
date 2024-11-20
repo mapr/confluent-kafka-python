@@ -11,14 +11,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import hashlib
 import os
 from typing import Optional
 
 import tink
+from hkdf import hkdf_extract, hkdf_expand
 from tink import KmsClient, prf, aead
 from tink.core import Registry
-from tink.proto import common_pb2, tink_pb2, hkdf_prf_pb2
+from tink.proto import common_pb2, tink_pb2, hkdf_prf_pb2, aes_gcm_pb2
 
 
 class LocalKmsClient(KmsClient):
@@ -30,21 +31,24 @@ class LocalKmsClient(KmsClient):
         self._aead = self._get_primitive(secret)
 
     def _get_primitive(self, secret: str) -> aead.Aead:
-        key_template = aead.aead_key_templates.AES128_GCM_RAW
         key = self._get_key(secret)
+        aes_gcm_key = aes_gcm_pb2.AesGcmKey(
+            version=0,
+            key_value=key
+        )
+        serialized_aes_gcm_key = aes_gcm_key.SerializeToString()
+        key_template = aead.aead_key_templates.AES128_GCM_RAW
         key_data = tink_pb2.KeyData(
-            type_url = key_template.type_url,
-            value = key,
-            key_material = tink_pb2.KeyData.SYMMETRIC
+            type_url=key_template.type_url,
+            value=serialized_aes_gcm_key,
+            key_material_type=tink_pb2.KeyData.SYMMETRIC
         )
         return Registry().primitive(key_data, aead.Aead)
 
     def _get_key(self, secret: str) -> bytes:
         key = secret.encode("utf-8")
-        template = _create_hkdf_key_template(len(key), common_pb2.HashType.SHA256)
-        keyset_handle = tink.new_keyset_handle(template)
-        primitive = keyset_handle.primitive(prf.PrfSet)
-        return primitive.primary().compute(key, output_length=16)
+        prk = hkdf_extract(None, key, hash=hashlib.sha256)
+        return hkdf_expand(prk, length=16, hash=hashlib.sha256)
 
     def does_support(self, key_uri: str) -> bool:
         return key_uri.startswith("local-kms://")

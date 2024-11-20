@@ -306,7 +306,6 @@ class BaseSerde(object):
             if rule.mode == RuleMode.WRITEREAD:
                 if rule_mode != RuleMode.READ and rule_mode != RuleMode.WRITE:
                     continue
-                continue
             elif rule.mode == RuleMode.UPDOWN:
                 if rule_mode != RuleMode.UPGRADE and rule_mode != RuleMode.DOWNGRADE:
                     continue
