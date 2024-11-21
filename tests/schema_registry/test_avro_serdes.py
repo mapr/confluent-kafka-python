@@ -1369,3 +1369,212 @@ def test_avro_jsonata_with_cel():
     assert obj2 == newobj
 
 
+def test_avro_jsonata_fully_compatible():
+    rule1_to_2 = "$merge([$sift($, function($v, $k) {$k != 'size'}), {'height': $.'size'}])"
+    rule2_to_1 = "$merge([$sift($, function($v, $k) {$k != 'height'}), {'size': $.'height'}])"
+    rule2_to_3 = "$merge([$sift($, function($v, $k) {$k != 'height'}), {'length': $.'height'}])"
+    rule3_to_2 = "$merge([$sift($, function($v, $k) {$k != 'length'}), {'height': $.'length'}])"
+
+    conf = {'url': _BASE_URL}
+    client = SchemaRegistryClient.new_client(conf)
+    schema = {
+        'type': 'record',
+        'name': 'old',
+        'fields': [
+            {'name': 'name', 'type': 'string'},
+            {'name': 'size', 'type': 'int'},
+            {'name': 'version', 'type': 'int'},
+        ]
+    }
+    client.register_schema(_SUBJECT, Schema(
+        json.dumps(schema),
+        "AVRO",
+        [],
+        Metadata(
+            None,
+            MetadataProperties({"application.version": "v1"}),
+            None
+        ),
+        None
+    ))
+
+    schema = {
+        'type': 'record',
+        'name': 'new',
+        'fields': [
+            {'name': 'name', 'type': 'string'},
+            {'name': 'height', 'type': 'int'},
+            {'name': 'version', 'type': 'int'},
+        ]
+    }
+
+    rule1 = Rule(
+        "rule1",
+        "",
+        RuleKind.TRANSFORM,
+        RuleMode.UPGRADE,
+        "JSONATA",
+        None,
+        None,
+        rule1_to_2,
+        None,
+        None,
+        False
+    )
+    rule2 = Rule(
+        "rule2",
+        "",
+        RuleKind.TRANSFORM,
+        RuleMode.DOWNGRADE,
+        "JSONATA",
+        None,
+        None,
+        rule2_to_1,
+        None,
+        None,
+        False
+    )
+    client.register_schema(_SUBJECT, Schema(
+        json.dumps(schema),
+        "AVRO",
+        [],
+        Metadata(
+            None,
+            MetadataProperties({"application.version": "v2"}),
+            None
+        ),
+        RuleSet([rule1, rule2], None)
+    ))
+
+    schema = {
+        'type': 'record',
+        'name': 'newer',
+        'fields': [
+            {'name': 'name', 'type': 'string'},
+            {'name': 'length', 'type': 'int'},
+            {'name': 'version', 'type': 'int'},
+        ]
+    }
+
+    rule3 = Rule(
+        "rule3",
+        "",
+        RuleKind.TRANSFORM,
+        RuleMode.UPGRADE,
+        "JSONATA",
+        None,
+        None,
+        rule2_to_3,
+        None,
+        None,
+        False
+    )
+    rule4 = Rule(
+        "rule4",
+        "",
+        RuleKind.TRANSFORM,
+        RuleMode.DOWNGRADE,
+        "JSONATA",
+        None,
+        None,
+        rule3_to_2,
+        None,
+        None,
+        False
+    )
+    client.register_schema(_SUBJECT, Schema(
+        json.dumps(schema),
+        "AVRO",
+        [],
+        Metadata(
+            None,
+            MetadataProperties({"application.version": "v3"}),
+            None
+        ),
+        RuleSet([rule3, rule4], None)
+    ))
+
+    obj = {
+        'name': 'alice',
+        'size': 123,
+        'version': 1,
+    }
+    obj2 = {
+        'name': 'alice',
+        'height': 123,
+        'version': 1,
+    }
+    obj3 = {
+        'name': 'alice',
+        'length': 123,
+        'version': 1,
+    }
+
+    ser_conf = {
+        'auto.register.schemas': False,
+        'use.latest.version': False,
+        'use.latest.with.metadata': {
+            'application.version': 'v1'
+        }
+    }
+    ser = AvroSerializer(client, schema_str=None, conf=ser_conf)
+    ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
+    obj_bytes = ser(obj, ser_ctx)
+
+    deserialize_with_all_versions(client, ser_ctx, obj_bytes, obj, obj2, obj3)
+
+    ser_conf = {
+        'auto.register.schemas': False,
+        'use.latest.version': False,
+        'use.latest.with.metadata': {
+            'application.version': 'v2'
+        }
+    }
+    ser = AvroSerializer(client, schema_str=None, conf=ser_conf)
+    ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
+    obj_bytes = ser(obj2, ser_ctx)
+
+    deserialize_with_all_versions(client, ser_ctx, obj_bytes, obj, obj2, obj3)
+
+    ser_conf = {
+        'auto.register.schemas': False,
+        'use.latest.version': False,
+        'use.latest.with.metadata': {
+            'application.version': 'v3'
+        }
+    }
+    ser = AvroSerializer(client, schema_str=None, conf=ser_conf)
+    ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
+    obj_bytes = ser(obj3, ser_ctx)
+
+    deserialize_with_all_versions(client, ser_ctx, obj_bytes, obj, obj2, obj3)
+
+def deserialize_with_all_versions(client, ser_ctx, obj_bytes, obj, obj2, obj3):
+    deser_conf = {
+        'use.latest.with.metadata': {
+            'application.version': 'v1'
+        }
+    }
+    deser = AvroDeserializer(client, conf=deser_conf)
+    newobj = deser(obj_bytes, ser_ctx)
+    assert obj == newobj
+
+    deser_conf = {
+        'use.latest.with.metadata': {
+            'application.version': 'v2'
+        }
+    }
+    deser = AvroDeserializer(client, conf=deser_conf)
+    newobj = deser(obj_bytes, ser_ctx)
+    assert obj2 == newobj
+
+    deser_conf = {
+        'use.latest.with.metadata': {
+            'application.version': 'v3'
+        }
+    }
+    deser = AvroDeserializer(client, conf=deser_conf)
+    newobj = deser(obj_bytes, ser_ctx)
+    assert obj3 == newobj
+
+

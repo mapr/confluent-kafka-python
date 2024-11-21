@@ -287,18 +287,17 @@ class BaseSerde(object):
         elif rule_mode == RuleMode.DOWNGRADE:
             if source.rule_set is not None:
                 rules = source.rule_set.migration_rules
-                if rules is not None:
-                    rules = rules[:]
-                    rules.reverse()
+                rules = rules[:] if rules else []
+                rules.reverse()
         else:
             if target.rule_set is not None:
                 rules = target.rule_set.domain_rules
                 if rule_mode == RuleMode.READ:
                     # Execute read rules in reverse order for symmetry
-                    rules = rules[:]
+                    rules = rules[:] if rules else []
                     rules.reverse()
 
-        if rules is None:
+        if not rules:
             return message
 
         for index in range(len(rules)):
