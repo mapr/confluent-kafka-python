@@ -23,7 +23,7 @@ import pytest
 from fastavro._logical_readers import UUID
 
 from confluent_kafka.schema_registry import SchemaRegistryClient, \
-    Schema
+    Schema, Metadata, MetadataProperties
 from confluent_kafka.schema_registry.avro import AvroSerializer, \
     AvroDeserializer
 from confluent_kafka.schema_registry.rules.cel.cel_executor import CelExecutor
@@ -1262,5 +1262,110 @@ def test_avro_encryption_with_union():
     executor.client = dek_client
     obj2 = deser(obj_bytes, ser_ctx)
     assert obj == obj2
+
+
+def test_avro_jsonata_with_cel():
+    rule1_to_2 = "$merge([$sift($, function($v, $k) {$k != 'size'}), {'height': $.'size'}])"
+
+    conf = {'url': _BASE_URL}
+    client = SchemaRegistryClient.new_client(conf)
+    schema = {
+        'type': 'record',
+        'name': 'old',
+        'fields': [
+            {'name': 'name', 'type': 'string'},
+            {'name': 'size', 'type': 'int'},
+            {'name': 'version', 'type': 'int'},
+        ]
+    }
+    client.register_schema(_SUBJECT, Schema(
+        json.dumps(schema),
+        "AVRO",
+        [],
+        Metadata(
+            None,
+            MetadataProperties({"application.version": "v1"}),
+            None
+        ),
+        None
+    ))
+
+    schema = {
+        'type': 'record',
+        'name': 'new',
+        'fields': [
+            {'name': 'name', 'type': 'string'},
+            {'name': 'height', 'type': 'int'},
+            {'name': 'version', 'type': 'int'},
+        ]
+    }
+
+    rule1 = Rule(
+        "test-jsonata",
+        "",
+        RuleKind.TRANSFORM,
+        RuleMode.UPGRADE,
+        "JSONATA",
+        None,
+        None,
+        rule1_to_2,
+        None,
+        None,
+        False
+    )
+    rule2 = Rule(
+        "test-cel",
+        "",
+        RuleKind.TRANSFORM,
+        RuleMode.READ,
+        "CEL_FIELD",
+        None,
+        None,
+        "name == 'name' ; value + '-suffix'",
+        None,
+        None,
+        False
+    )
+    client.register_schema(_SUBJECT, Schema(
+        json.dumps(schema),
+        "AVRO",
+        [],
+        Metadata(
+            None,
+            MetadataProperties({"application.version": "v2"}),
+            None
+        ),
+        RuleSet([rule1], [rule2])
+    ))
+
+    obj = {
+        'name': 'alice',
+        'size': 123,
+        'version': 1,
+    }
+    ser_conf = {
+        'auto.register.schemas': False,
+        'use.latest.version': False,
+        'use.latest.with.metadata': {
+            'application.version': 'v1'
+        }
+    }
+    ser = AvroSerializer(client, schema_str=None, conf=ser_conf)
+    ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
+    obj_bytes = ser(obj, ser_ctx)
+
+    obj2 = {
+        'name': 'alice-suffix',
+        'height': 123,
+        'version': 1,
+    }
+    deser_conf = {
+        'use.latest.with.metadata': {
+            'application.version': 'v2'
+        }
+    }
+    deser = AvroDeserializer(client, conf=deser_conf)
+    newobj = deser(obj_bytes, ser_ctx)
+    assert obj2 == newobj
 
 

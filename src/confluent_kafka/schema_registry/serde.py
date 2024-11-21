@@ -198,7 +198,7 @@ class FieldRuleExecutor(RuleExecutor):
 
     @staticmethod
     def are_transforms_with_same_tag(rule1: Rule, rule2: Rule) -> bool:
-        return (rule1.tags is not None and len(rule1.tags) > 0
+        return (bool(rule1.tags)
                 and rule1.kind == RuleKind.TRANSFORM
                 and rule1.kind == rule2.kind
                 and rule1.mode == rule2.mode
@@ -267,7 +267,7 @@ class BaseSerde(object):
     def _get_reader_schema(self, subject: str, fmt: str = None) -> RegisteredSchema:
         latest_schema = None
         if self._use_latest_with_metadata is not None:
-            latest_schema = self._registry.get_latest_version_with_metadata(
+            latest_schema = self._registry.get_latest_with_metadata(
                 subject, self._use_latest_with_metadata, fmt, True)
         if self._use_latest_version:
             latest_schema = self._registry.get_latest_version(subject, fmt)
@@ -389,14 +389,14 @@ class BaseDeserializer(BaseSerde, Deserializer):
             return False
         if mode in (RuleMode.UPGRADE, RuleMode.DOWNGRADE):
             return any(rule.mode == mode or rule.mode == RuleMode.UPDOWN
-                       for rule in rule_set.migration_rules)
+                       for rule in rule_set.migration_rules or [])
         elif mode == RuleMode.UPDOWN:
-            return any(rule.mode == mode for rule in rule_set.migration_rules)
+            return any(rule.mode == mode for rule in rule_set.migration_rules or [])
         elif mode in (RuleMode.WRITE, RuleMode.READ):
             return any(rule.mode == mode or rule.mode == RuleMode.WRITEREAD
-                       for rule in rule_set.domain_rules)
+                       for rule in rule_set.domain_rules or [])
         elif mode == RuleMode.WRITEREAD:
-            return any(rule.mode == mode for rule in rule_set.migration_rules)
+            return any(rule.mode == mode for rule in rule_set.migration_rules or [])
 
     def _get_migrations(self, subject: str, source_info: Schema,
         target: RegisteredSchema, fmt: Optional[str]) -> List[Migration]:
