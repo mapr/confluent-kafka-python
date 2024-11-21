@@ -52,6 +52,7 @@ JsonMessage = Union[
 ]
 JsonSchema = Union[bool, dict]
 
+DEFAULT_SPEC = referencing.jsonschema.DRAFT7
 
 class _ContextStringIO(BytesIO):
     """
@@ -69,7 +70,7 @@ class _ContextStringIO(BytesIO):
 def _retrieve_via_httpx(uri: str):
     response = httpx.get(uri)
     return Resource.from_contents(
-        response.json(), default_specification=referencing.jsonschema.DRAFT7)
+        response.json(), default_specification=DEFAULT_SPEC)
 
 
 def _resolve_named_schema(schema: Schema, schema_registry_client: SchemaRegistryClient,
@@ -90,7 +91,7 @@ def _resolve_named_schema(schema: Schema, schema_registry_client: SchemaRegistry
             ref_registry = _resolve_named_schema(referenced_schema.schema, schema_registry_client, ref_registry)
             referenced_schema_dict = json.loads(referenced_schema.schema.schema_str)
             resource = Resource.from_contents(
-                referenced_schema_dict, default_specification=referencing.jsonschema.DRAFT7)
+                referenced_schema_dict, default_specification=DEFAULT_SPEC)
             ref_registry = ref_registry.with_resource(ref.name, resource)
     return ref_registry
 
@@ -224,6 +225,8 @@ class JSONSerializer(BaseSerializer):
             self._schema = Schema(schema_str, schema_type="JSON")
         elif isinstance(schema_str, Schema):
             self._schema = schema_str
+        else:
+            self._schema = None
 
         self._registry = schema_registry_client
         self._rule_registry = rule_registry if rule_registry else RuleRegistry.get_global_instance()
@@ -336,7 +339,7 @@ class JSONSerializer(BaseSerializer):
         if latest_schema is not None:
             parsed_schema, ref_registry = self._get_parsed_schema(latest_schema.schema)
             root_resource = Resource.from_contents(
-                parsed_schema, default_specification=referencing.jsonschema.DRAFT7)
+                parsed_schema, default_specification=DEFAULT_SPEC)
             ref_resolver = ref_registry.resolver_with_root(root_resource)
             field_transformer = lambda rule_ctx, field_transform, msg: (
                 transform(rule_ctx, parsed_schema, ref_resolver, "$", msg, field_transform))
@@ -573,7 +576,7 @@ class JSONDeserializer(BaseDeserializer):
                 obj_dict = self._execute_migrations(ctx, subject, migrations, obj_dict)
 
             reader_root_resource = Resource.from_contents(
-                reader_schema, default_specification=referencing.jsonschema.DRAFT7)
+                reader_schema, default_specification=DEFAULT_SPEC)
             reader_ref_resolver = reader_ref_registry.resolver_with_root(reader_root_resource)
             field_transformer = lambda rule_ctx, field_transform, message: (
                 transform(rule_ctx, reader_schema, reader_ref_resolver, "$", message, field_transform))

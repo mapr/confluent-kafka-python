@@ -101,3 +101,102 @@ def test_json_basic_serialization():
     deser = JSONDeserializer(None, schema_registry_client=client)
     obj2 = deser(obj_bytes, ser_ctx)
     assert obj == obj2
+
+
+def test_json_serialize_nested():
+    conf = {'url': _BASE_URL}
+    client = SchemaRegistryClient.new_client(conf)
+    ser_conf = {'auto.register.schemas': True}
+    nested = {
+        'intField': 123,
+        'doubleField': 45.67,
+        'stringField': 'hi',
+        'booleanField': True,
+        'bytesField': base64.b64encode(b'foobar').decode('utf-8'),
+    }
+    obj = {
+        'nested': nested
+    }
+    schema = {
+        "type" : "object",
+        "properties" : {
+            "otherField" : {
+                "type" : "object",
+                "properties" : {
+                    "intField" : {
+                        "type" : "integer"
+                    },
+                    "doubleField" : {
+                        "type" : "number"
+                    },
+                    "stringField" : {
+                        "type" : "string"
+                    },
+                    "boolField" : {
+                        "type" : "boolean"
+                    },
+                    "bytesField" : {
+                        "type" : "string"
+                    }
+                }
+            }
+        }
+    }
+    ser = JSONSerializer(json.dumps(schema), client, conf=ser_conf)
+    ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
+    obj_bytes = ser(obj, ser_ctx)
+
+    deser = JSONDeserializer(None, schema_registry_client=client)
+    obj2 = deser(obj_bytes, ser_ctx)
+    assert obj == obj2
+
+
+def test_json_serialize_references():
+    conf = {'url': _BASE_URL}
+    client = SchemaRegistryClient.new_client(conf)
+    ser_conf = {'auto.register.schemas': False, 'use.latest.version': True}
+
+    referenced = {
+        'intField': 123,
+        'doubleField': 45.67,
+        'stringField': 'hi',
+        'booleanField': True,
+        'bytesField': base64.b64encode(b'foobar').decode('utf-8'),
+    }
+    obj = {
+        'refField': referenced
+    }
+    ref_schema = {
+        "type": "object",
+        "properties": {
+            "intField": { "type": "integer" },
+            "doubleField": { "type": "number" },
+            "stringField": {
+                "type": "string",
+                "confluent:tags": [ "PII" ]
+            },
+            "boolField": { "type": "boolean" },
+            "bytesField": {
+                "type": "string",
+                "contentEncoding": "base64",
+                "confluent:tags": [ "PII" ]
+            }
+        }
+    }
+    client.register_schema('ref', Schema(json.dumps(ref_schema)), 'JSON')
+    schema = {
+        "type": "object",
+        "properties": {
+            "otherField": { "$ref": "ref" }
+        }
+    }
+    refs = [SchemaReference('ref', 'ref', 1)]
+    client.register_schema(_SUBJECT, Schema(json.dumps(schema), 'JSON', refs))
+
+    ser = JSONSerializer(None, client, conf=ser_conf)
+    ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
+    obj_bytes = ser(obj, ser_ctx)
+
+    deser = JSONDeserializer(None, schema_registry_client=client)
+    obj2 = deser(obj_bytes, ser_ctx)
+    assert obj == obj2
