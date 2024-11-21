@@ -22,6 +22,7 @@ import struct
 from typing import Union, Optional, List, Set, Tuple, Callable
 
 import httpx
+import referencing
 from jsonschema import validate, ValidationError
 from referencing import Registry, Resource
 from referencing._core import Resolver
@@ -67,7 +68,8 @@ class _ContextStringIO(BytesIO):
 
 def _retrieve_via_httpx(uri: str):
     response = httpx.get(uri)
-    return Resource.from_contents(response.json())
+    return Resource.from_contents(
+        response.json(), default_specification=referencing.jsonschema.DRAFT7)
 
 
 def _resolve_named_schema(schema: Schema, schema_registry_client: SchemaRegistryClient,
@@ -87,7 +89,8 @@ def _resolve_named_schema(schema: Schema, schema_registry_client: SchemaRegistry
             referenced_schema = schema_registry_client.get_version(ref.subject, ref.version, True)
             ref_registry = _resolve_named_schema(referenced_schema.schema, schema_registry_client, ref_registry)
             referenced_schema_dict = json.loads(referenced_schema.schema.schema_str)
-            resource = Resource.from_contents(referenced_schema_dict)
+            resource = Resource.from_contents(
+                referenced_schema_dict, default_specification=referencing.jsonschema.DRAFT7)
             ref_registry = ref_registry.with_resource(ref.name, resource)
     return ref_registry
 
@@ -330,25 +333,28 @@ class JSONSerializer(BaseSerializer):
         else:
             value = obj
 
-        if self._validate:
-            try:
-                if self._ref_registry:
-                    validate(instance=value, schema=self._parsed_schema,
-                             registry=self._ref_registry)
-                else:
-                    validate(instance=value, schema=self._parsed_schema)
-            except ValidationError as ve:
-                raise SerializationError(ve.message)
-
         if latest_schema is not None:
             parsed_schema, ref_registry = self._get_parsed_schema(latest_schema.schema)
-            root_resource = Resource.from_contents(parsed_schema)
+            root_resource = Resource.from_contents(
+                parsed_schema, default_specification=referencing.jsonschema.DRAFT7)
             ref_resolver = ref_registry.resolver_with_root(root_resource)
             field_transformer = lambda rule_ctx, field_transform, msg: (
                 transform(rule_ctx, parsed_schema, ref_resolver, "$", msg, field_transform))
             value = self._execute_rules(ctx, subject, RuleMode.WRITE, None,
                                         latest_schema.schema, value, None,
                                         field_transformer)
+        else:
+            parsed_schema = self._parsed_schema
+
+        if self._validate:
+            try:
+                if self._ref_registry:
+                    validate(instance=value, schema=parsed_schema,
+                             registry=self._ref_registry)
+                else:
+                    validate(instance=value, schema=parsed_schema)
+            except ValidationError as ve:
+                raise SerializationError(ve.message)
 
         with _ContextStringIO() as fo:
             # Write the magic byte and schema ID in network byte order (big endian)
@@ -363,9 +369,9 @@ class JSONSerializer(BaseSerializer):
         if schema is None:
             return None, None
 
-        parsed_schema, ref_registry = self._parsed_schemas.get_parsed_schema(schema)
-        if parsed_schema is not None:
-            return parsed_schema, ref_registry
+        result = self._parsed_schemas.get_parsed_schema(schema)
+        if result is not None:
+            return result
 
         ref_registry = _resolve_named_schema(schema, self._registry)
         parsed_schema = json.loads(schema.schema_str)
@@ -424,7 +430,7 @@ class JSONDeserializer(BaseDeserializer):
         schema_registry_client (SchemaRegistryClient, optional): Schema Registry client instance. Needed if ``schema_str`` is a schema referencing other schemas or is not provided.
     """  # noqa: E501
 
-    __slots__ = ['_parsed_schema', '_ref_registry', '_from_dict', '_schema',
+    __slots__ = ['_reader_schema', '_ref_registry', '_from_dict', '_schema',
                  '_parsed_schemas', '_validate']
 
     _default_conf = {'use.latest.version': False,
@@ -456,7 +462,6 @@ class JSONDeserializer(BaseDeserializer):
         else:
             raise TypeError('You must pass either str or Schema')
 
-        self._parsed_schema, self._ref_registry = self._get_parsed_schema(schema)
         self._schema = schema
         self._registry = schema_registry_client
         self._rule_registry = rule_registry if rule_registry else RuleRegistry.get_global_instance()
@@ -486,6 +491,11 @@ class JSONDeserializer(BaseDeserializer):
         if len(conf_copy) > 0:
             raise ValueError("Unrecognized properties: {}"
                              .format(", ".join(conf_copy.keys())))
+
+        if schema:
+            self._reader_schema, self._ref_registry = self._get_parsed_schema(self._schema)
+        else:
+            self._reader_schema, self._ref_registry = None, None
 
         if from_dict is not None and not callable(from_dict):
             raise ValueError("from_dict must be callable with the signature"
@@ -550,6 +560,10 @@ class JSONDeserializer(BaseDeserializer):
                 migrations = self._get_migrations(subject, writer_schema_raw, latest_schema, None)
                 reader_schema_raw = latest_schema.schema
                 reader_schema, reader_ref_registry = self._get_parsed_schema(latest_schema.schema)
+            elif self._schema is not None:
+                migrations = None
+                reader_schema_raw = self._schema
+                reader_schema, reader_ref_registry = self._reader_schema, self._ref_registry
             else:
                 migrations = None
                 reader_schema_raw = writer_schema_raw
@@ -558,7 +572,8 @@ class JSONDeserializer(BaseDeserializer):
             if migrations:
                 obj_dict = self._execute_migrations(ctx, subject, migrations, obj_dict)
 
-            reader_root_resource = Resource.from_contents(reader_schema)
+            reader_root_resource = Resource.from_contents(
+                reader_schema, default_specification=referencing.jsonschema.DRAFT7)
             reader_ref_resolver = reader_ref_registry.resolver_with_root(reader_root_resource)
             field_transformer = lambda rule_ctx, field_transform, message: (
                 transform(rule_ctx, reader_schema, reader_ref_resolver, "$", message, field_transform))
@@ -569,10 +584,10 @@ class JSONDeserializer(BaseDeserializer):
             if self._validate:
                 try:
                     if self._ref_registry:
-                        validate(instance=obj_dict, schema=self._parsed_schema,
+                        validate(instance=obj_dict, schema=reader_schema,
                                  registry = self._ref_registry)
                     else:
-                        validate(instance=obj_dict, schema=self._parsed_schema)
+                        validate(instance=obj_dict, schema=reader_schema)
                 except ValidationError as ve:
                     raise SerializationError(ve.message)
 
@@ -585,9 +600,9 @@ class JSONDeserializer(BaseDeserializer):
         if schema is None:
             return None, None
 
-        parsed_schema, ref_registry = self._parsed_schemas.get_parsed_schema(schema)
-        if parsed_schema is not None:
-            return parsed_schema, ref_registry
+        result = self._parsed_schemas.get_parsed_schema(schema)
+        if result is not None:
+            return result
 
         ref_registry = _resolve_named_schema(schema, self._registry)
         parsed_schema = json.loads(schema.schema_str)
