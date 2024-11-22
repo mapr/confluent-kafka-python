@@ -14,7 +14,7 @@
 
 from typing import Any
 
-from celpy.celtypes import StringType
+from celpy import celtypes
 
 from confluent_kafka.schema_registry.rule_registry import RuleRegistry
 from confluent_kafka.schema_registry.rules.cel.cel_executor import CelExecutor, \
@@ -44,7 +44,7 @@ class CelFieldExecutor(FieldRuleExecutor):
             "fullName": field_ctx.full_name,
             "name": field_ctx.name,
             "typeName": field_ctx.type_name(),
-            "tags": [ StringType(tag) for tag in field_ctx.tags ],
+            "tags": [ celtypes.StringType(tag) for tag in field_ctx.tags ],
             "message": msg_to_cel(field_value) ,
         }
         return self._executor.execute(ctx, field_value, args)
