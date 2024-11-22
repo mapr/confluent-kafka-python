@@ -290,7 +290,7 @@ class AvroSerializer(BaseSerializer):
                 # This function does not comply.
                 # https://github.com/fastavro/fastavro/issues/415
                 schema_dict = loads(schema.schema_str)
-                schema_name = parsed_schema.get("name", schema_dict["type"])
+                schema_name = parsed_schema.get("name", schema_dict.get("type"))
         else:
             schema_name = None
             parsed_schema = None
@@ -623,7 +623,7 @@ def transform(ctx: RuleContext, schema: AvroSchema, message: AvroMessage,
             return message
         return transform(ctx, subschema, message, field_transform)
     elif isinstance(schema, dict):
-        schema_type = schema["type"]
+        schema_type = schema.get("type")
         if schema_type == 'array':
             return [transform(ctx, schema["items"], item, field_transform)
                     for item in message]
@@ -671,7 +671,7 @@ def get_type(schema: AvroSchema) -> FieldType:
     if isinstance(schema, list):
         return FieldType.COMBINED
     elif isinstance(schema, dict):
-        schema_type = schema["type"]
+        schema_type = schema.get("type")
     else:
         # string schemas; this could be either a named schema or a primitive type
         schema_type = schema
@@ -742,7 +742,7 @@ def _get_inline_tags_recursively(ns: str, name: str, schema: Optional[AvroSchema
         # string schemas; this could be either a named schema or a primitive type
         return
     else:
-        schema_type = schema["type"]
+        schema_type = schema.get("type")
         if schema_type == 'record':
             record_ns = schema.get("namespace")
             record_name = schema.get("name")

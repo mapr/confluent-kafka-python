@@ -86,7 +86,7 @@ def test_json_basic_serialization():
                 "type": "string",
                 "confluent:tags": [ "PII" ]
             },
-            "boolField": { "type": "boolean" },
+            "booleanField": { "type": "boolean" },
             "bytesField": {
                 "type": "string",
                 "contentEncoding": "base64",
@@ -132,7 +132,7 @@ def test_json_serialize_nested():
                     "stringField" : {
                         "type" : "string"
                     },
-                    "boolField" : {
+                    "booleanField" : {
                         "type" : "boolean"
                     },
                     "bytesField" : {
@@ -175,7 +175,7 @@ def test_json_serialize_references():
                 "type": "string",
                 "confluent:tags": [ "PII" ]
             },
-            "boolField": { "type": "boolean" },
+            "booleanField": { "type": "boolean" },
             "bytesField": {
                 "type": "string",
                 "contentEncoding": "base64",
@@ -200,3 +200,326 @@ def test_json_serialize_references():
     deser = JSONDeserializer(None, schema_registry_client=client)
     obj2 = deser(obj_bytes, ser_ctx)
     assert obj == obj2
+
+
+def test_json_cel_condition():
+    conf = {'url': _BASE_URL}
+    client = SchemaRegistryClient.new_client(conf)
+    ser_conf = {'auto.register.schemas': False, 'use.latest.version': True}
+    schema = {
+        "type": "object",
+        "properties": {
+            "intField": { "type": "integer" },
+            "doubleField": { "type": "number" },
+            "stringField": {
+                "type": "string",
+                "confluent:tags": [ "PII" ]
+            },
+            "booleanField": { "type": "boolean" },
+            "bytesField": {
+                "type": "string",
+                "contentEncoding": "base64",
+                "confluent:tags": [ "PII" ]
+            }
+        }
+    }
+
+    rule = Rule(
+        "test-cel",
+        "",
+        RuleKind.CONDITION,
+        RuleMode.WRITE,
+        "CEL",
+        None,
+        None,
+        "message.stringField == 'hi'",
+        None,
+        None,
+        False
+    )
+    client.register_schema(_SUBJECT, Schema(
+        json.dumps(schema),
+        "JSON",
+        [],
+        None,
+        RuleSet(None, [rule])
+    ))
+
+    obj = {
+        'intField': 123,
+        'doubleField': 45.67,
+        'stringField': 'hi',
+        'booleanField': True,
+        'bytesField': base64.b64encode(b'foobar').decode('utf-8'),
+    }
+    ser = JSONSerializer(json.dumps(schema), client, conf=ser_conf)
+    ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
+    obj_bytes = ser(obj, ser_ctx)
+
+    deser = JSONDeserializer(None, schema_registry_client=client)
+    obj2 = deser(obj_bytes, ser_ctx)
+    assert obj == obj2
+
+
+def test_json_cel_condition_fail():
+    conf = {'url': _BASE_URL}
+    client = SchemaRegistryClient.new_client(conf)
+    ser_conf = {'auto.register.schemas': False, 'use.latest.version': True}
+    schema = {
+        "type": "object",
+        "properties": {
+            "intField": { "type": "integer" },
+            "doubleField": { "type": "number" },
+            "stringField": {
+                "type": "string",
+                "confluent:tags": [ "PII" ]
+            },
+            "booleanField": { "type": "boolean" },
+            "bytesField": {
+                "type": "string",
+                "contentEncoding": "base64",
+                "confluent:tags": [ "PII" ]
+            }
+        }
+    }
+
+    rule = Rule(
+        "test-cel",
+        "",
+        RuleKind.CONDITION,
+        RuleMode.WRITE,
+        "CEL",
+        None,
+        None,
+        "message.stringField != 'hi'",
+        None,
+        None,
+        False
+    )
+    client.register_schema(_SUBJECT, Schema(
+        json.dumps(schema),
+        "JSON",
+        [],
+        None,
+        RuleSet(None, [rule])
+    ))
+
+    obj = {
+        'intField': 123,
+        'doubleField': 45.67,
+        'stringField': 'hi',
+        'booleanField': True,
+        'bytesField': base64.b64encode(b'foobar').decode('utf-8'),
+    }
+    ser = JSONSerializer(json.dumps(schema), client, conf=ser_conf)
+    ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
+    try:
+        obj_bytes = ser(obj, ser_ctx)
+    except Exception as e:
+        assert isinstance(e.__cause__, RuleConditionError)
+
+
+def test_json_cel_condition_ignore_fail():
+    conf = {'url': _BASE_URL}
+    client = SchemaRegistryClient.new_client(conf)
+    ser_conf = {'auto.register.schemas': False, 'use.latest.version': True}
+    schema = {
+        "type": "object",
+        "properties": {
+            "intField": { "type": "integer" },
+            "doubleField": { "type": "number" },
+            "stringField": {
+                "type": "string",
+                "confluent:tags": [ "PII" ]
+            },
+            "booleanField": { "type": "boolean" },
+            "bytesField": {
+                "type": "string",
+                "contentEncoding": "base64",
+                "confluent:tags": [ "PII" ]
+            }
+        }
+    }
+
+    rule = Rule(
+        "test-cel",
+        "",
+        RuleKind.CONDITION,
+        RuleMode.WRITE,
+        "CEL",
+        None,
+        None,
+        "message.stringField != 'hi'",
+        None,
+        "NONE",
+        False
+    )
+    client.register_schema(_SUBJECT, Schema(
+        json.dumps(schema),
+        "JSON",
+        [],
+        None,
+        RuleSet(None, [rule])
+    ))
+
+    obj = {
+        'intField': 123,
+        'doubleField': 45.67,
+        'stringField': 'hi',
+        'booleanField': True,
+        'bytesField': base64.b64encode(b'foobar').decode('utf-8'),
+    }
+    ser = JSONSerializer(json.dumps(schema), client, conf=ser_conf)
+    ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
+    obj_bytes = ser(obj, ser_ctx)
+
+    deser = JSONDeserializer(None, schema_registry_client=client)
+    obj2 = deser(obj_bytes, ser_ctx)
+    assert obj == obj2
+
+
+def test_json_cel_field_transform():
+    conf = {'url': _BASE_URL}
+    client = SchemaRegistryClient.new_client(conf)
+    ser_conf = {'auto.register.schemas': False, 'use.latest.version': True}
+    schema = {
+        "type": "object",
+        "properties": {
+            "intField": { "type": "integer" },
+            "doubleField": { "type": "number" },
+            "stringField": {
+                "type": "string",
+                "confluent:tags": [ "PII" ]
+            },
+            "booleanField": { "type": "boolean" },
+            "bytesField": {
+                "type": "string",
+                "contentEncoding": "base64",
+                "confluent:tags": [ "PII" ]
+            }
+        }
+    }
+
+    rule = Rule(
+        "test-cel",
+        "",
+        RuleKind.TRANSFORM,
+        RuleMode.WRITE,
+        "CEL_FIELD",
+        None,
+        None,
+        "name == 'stringField' ; value + '-suffix'",
+        None,
+        None,
+        False
+    )
+    client.register_schema(_SUBJECT, Schema(
+        json.dumps(schema),
+        "JSON",
+        [],
+        None,
+        RuleSet(None, [rule])
+    ))
+
+    obj = {
+        'intField': 123,
+        'doubleField': 45.67,
+        'stringField': 'hi',
+        'booleanField': True,
+        'bytesField': base64.b64encode(b'foobar').decode('utf-8'),
+    }
+    ser = JSONSerializer(json.dumps(schema), client, conf=ser_conf)
+    ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
+    obj_bytes = ser(obj, ser_ctx)
+
+    obj2 = {
+        'intField': 123,
+        'doubleField': 45.67,
+        'stringField': 'hi-suffix',
+        'booleanField': True,
+        'bytesField': base64.b64encode(b'foobar').decode('utf-8'),
+    }
+    deser = JSONDeserializer(None, schema_registry_client=client)
+    newobj = deser(obj_bytes, ser_ctx)
+    assert obj2 == newobj
+
+
+def test_json_cel_field_transform_with_def():
+    conf = {'url': _BASE_URL}
+    client = SchemaRegistryClient.new_client(conf)
+    ser_conf = {'auto.register.schemas': False, 'use.latest.version': True}
+    schema = {
+        "$schema" : "http://json-schema.org/draft-07/schema#",
+        "additionalProperties" : False,
+        "definitions" : {
+            "Address" : {
+                "additionalProperties" : False,
+                "properties" : {
+                    "doornumber" : {
+                        "type" : "integer"
+                    },
+                    "doorpin" : {
+                        "confluent:tags" : [ "PII" ],
+                        "type" : "string"
+                    }
+                },
+                "type" : "object"
+            }
+        },
+        "properties" : {
+            "address" : {
+                "$ref" : "#/definitions/Address"
+            },
+            "name" : {
+                "confluent:tags" : [ "PII" ],
+                "type" : "string"
+            }
+        },
+        "title" : "Sample Event",
+        "type" : "object"
+    }
+
+    rule = Rule(
+        "test-cel",
+        "",
+        RuleKind.TRANSFORM,
+        RuleMode.WRITE,
+        "CEL_FIELD",
+        [ "PII"],
+        None,
+        "value + '-suffix'",
+        None,
+        None,
+        False
+    )
+    client.register_schema(_SUBJECT, Schema(
+        json.dumps(schema),
+        "JSON",
+        [],
+        None,
+        RuleSet(None, [rule])
+    ))
+
+    obj = {
+        'name': 'bob',
+        'address': {
+            'doornumber': 123,
+            'doorpin': '1234'
+        }
+    }
+    ser = JSONSerializer(json.dumps(schema), client, conf=ser_conf)
+    ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
+    obj_bytes = ser(obj, ser_ctx)
+
+    obj2 = {
+        'name': 'bob-suffix',
+        'address': {
+            'doornumber': 123,
+            'doorpin': '1234-suffix'
+        }
+    }
+    deser = JSONDeserializer(None, schema_registry_client=client)
+    newobj = deser(obj_bytes, ser_ctx)
+    assert obj2 == newobj
+
+

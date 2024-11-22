@@ -694,11 +694,14 @@ def _validate_subschemas(subschemas: List[JsonSchema],
 
 
 def get_type(schema: JsonSchema) -> FieldType:
-    if isinstance(schema, bool):
-        return FieldType.NULL
-    schema_type = schema["type"]
-    if isinstance(schema_type, list):
+    if isinstance(schema, list):
         return FieldType.COMBINED
+    elif isinstance(schema, dict):
+        schema_type = schema.get("type")
+    else:
+        # string schemas; this could be either a named schema or a primitive type
+        schema_type = schema
+
     if schema.get("const") is not None or schema.get("enum") is not None:
         return FieldType.ENUM
     if schema_type == "object":
