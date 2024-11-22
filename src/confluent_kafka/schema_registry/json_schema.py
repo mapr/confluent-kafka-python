@@ -347,13 +347,13 @@ class JSONSerializer(BaseSerializer):
                                         latest_schema.schema, value, None,
                                         field_transformer)
         else:
-            parsed_schema = self._parsed_schema
+            parsed_schema, ref_registry = self._parsed_schema, self._ref_registry
 
         if self._validate:
             try:
-                if self._ref_registry:
+                if ref_registry:
                     validate(instance=value, schema=parsed_schema,
-                             registry=self._ref_registry)
+                             registry=ref_registry)
                 else:
                     validate(instance=value, schema=parsed_schema)
             except ValidationError as ve:
@@ -586,9 +586,9 @@ class JSONDeserializer(BaseDeserializer):
 
             if self._validate:
                 try:
-                    if self._ref_registry:
+                    if reader_ref_registry:
                         validate(instance=obj_dict, schema=reader_schema,
-                                 registry = self._ref_registry)
+                                 registry=reader_ref_registry)
                     else:
                         validate(instance=obj_dict, schema=reader_schema)
                 except ValidationError as ve:
