@@ -135,12 +135,6 @@ class Serializer(object):
 
         raise NotImplementedError
 
-    def _get_reader_schema(self, subject: str) -> RegisteredSchema:
-        if self._use_latest_version:
-            latest_schema = self._registry.get_latest_version(subject)
-            self._schema_id = latest_schema.schema_id
-        pass
-
 
 class Deserializer(object):
     """

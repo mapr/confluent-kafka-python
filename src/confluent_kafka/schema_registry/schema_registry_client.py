@@ -851,7 +851,6 @@ class SchemaRegistryClient(object):
             `GET Subject Versions API Reference <https://docs.confluent.io/current/schema-registry/develop/api.html#post--subjects-(string-%20subject)-versions>`_
         """  # noqa: E501
 
-        # TODO RAY fix
         return self._rest_client.get('subjects/{}/versions'.format(_urlencode(subject_name)))
 
     def delete_version(self, subject_name: str, version: int) -> int:

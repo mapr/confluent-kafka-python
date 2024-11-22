@@ -177,8 +177,7 @@ def _resolve_named_schema(schema: Schema, schema_registry_client: SchemaRegistry
         pool = DescriptorPool()
     if schema.references is not None:
         for ref in schema.references:
-            # TODO RAY pass format
-            referenced_schema = schema_registry_client.get_version(ref.subject, ref.version, True)
+            referenced_schema = schema_registry_client.get_version(ref.subject, ref.version, True, 'serialized')
             pool = _resolve_named_schema(referenced_schema.schema, schema_registry_client, pool)
             pool.Add(_str_to_schema(referenced_schema.schema.schema_str))
     return pool
