@@ -51,6 +51,7 @@ JsonMessage = Union[
     list,  # 'array'
     dict,  # 'map' and 'record'
 ]
+
 JsonSchema = Union[bool, dict]
 
 DEFAULT_SPEC = referencing.jsonschema.DRAFT7

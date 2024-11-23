@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package test;
+option go_package="../test";
+
+message Author {
+  string name = 1;
+  int32 id = 2;
+  bytes picture = 3;
+  repeated string works = 4;
+}
+
+message Pizza {
+  string size = 1;
+  repeated string toppings = 2;
+}

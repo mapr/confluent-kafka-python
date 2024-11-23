@@ -21,6 +21,7 @@ import base64
 import struct
 import warnings
 from collections import deque
+from dataclasses import field
 from typing import Set, List, Union, Optional, Any
 
 from google.protobuf import descriptor_pb2
@@ -159,9 +160,10 @@ def _str_to_schema(schema_str: str) -> descriptor_pb2.FileDescriptorProto:
     #return descriptor_pb2.FileDescriptorProto.FromString(serialized_pb)
     file_descriptor_proto = descriptor_pb2.FileDescriptorProto()
     try:
-        return file_descriptor_proto.ParseFromString(serialized_pb)
+        file_descriptor_proto.ParseFromString(serialized_pb)
     except DecodeError as e:
         raise SerializationError(str(e))
+    return file_descriptor_proto
 
 
 def _resolve_named_schema(schema: Schema, schema_registry_client: SchemaRegistryClient,
@@ -854,6 +856,7 @@ class ProtobufDeserializer(BaseDeserializer):
         index = msg_index[0]
         if isinstance(desc, FileDescriptor):
             if len(msg_index) == 1:
+                return desc.
                 return desc.message_types_by_name[index]
             return self._get_message_desc(desc.message_types_by_name[index], msg_index[1:])
         else:

@@ -74,9 +74,6 @@ class _BaseRestClient(object):
             raise ValueError("Invalid url {}".format(base_url))
         self.base_url = base_url.rstrip('/')
 
-        # The following configs map Requests Session class properties.
-        # See the API docs for specifics.
-        # https://requests.readthedocs.io/en/master/api/#request-sessions
         self.verify = True
         ca = conf_copy.pop('ssl.ca.location', None)
         if ca is not None:
