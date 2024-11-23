@@ -21,7 +21,6 @@ import base64
 import struct
 import warnings
 from collections import deque
-from dataclasses import field
 from typing import Set, List, Union, Optional, Any
 
 from google.protobuf import descriptor_pb2
@@ -518,7 +517,7 @@ class ProtobufSerializer(BaseSerializer):
 
         if latest_schema is not None:
             fd = self._get_parsed_schema(latest_schema.schema)
-            desc = fd.message_types_by_name[message.DESCRIPTOR.full_name]
+            desc = fd.message_types_by_name[message.DESCRIPTOR.name]
             field_transformer = lambda rule_ctx, field_transform, msg: (
                 transform(rule_ctx, desc, msg, field_transform))
             message = self._execute_rules(ctx, subject, RuleMode.WRITE, None,
@@ -809,7 +808,7 @@ class ProtobufDeserializer(BaseDeserializer):
                 reader_schema_raw = writer_schema_raw
                 reader_schema = writer_schema
 
-            reader_desc = reader_schema.message_types_by_name[writer_desc.full_name]
+            reader_desc = reader_schema.message_types_by_name[writer_desc.name]
 
             if migrations:
                 msg = GetMessageClass(writer_desc)()
@@ -851,18 +850,25 @@ class ProtobufDeserializer(BaseDeserializer):
         self._parsed_schemas.set(schema, fd)
         return fd
 
-    def _get_message_desc(self, desc: Union[FileDescriptor, Descriptor],
+    def _get_message_desc(self, desc: FileDescriptor,
         msg_index: List[int]) -> Descriptor:
+        file_desc_proto = descriptor_pb2.FileDescriptorProto()
+        desc.CopyToProto(file_desc_proto)
+        desc_proto = self._get_message_desc_proto(file_desc_proto, msg_index)
+        return desc.message_types_by_name[desc_proto.name]
+
+    def _get_message_desc_proto(self,
+        desc: Union[descriptor_pb2.FileDescriptorProto, descriptor_pb2.DescriptorProto],
+        msg_index: List[int]) -> descriptor_pb2.DescriptorProto:
         index = msg_index[0]
-        if isinstance(desc, FileDescriptor):
+        if isinstance(desc, descriptor_pb2.FileDescriptorProto):
             if len(msg_index) == 1:
-                return desc.
-                return desc.message_types_by_name[index]
-            return self._get_message_desc(desc.message_types_by_name[index], msg_index[1:])
+                return desc.message_type[index]
+            return self._get_message_desc(desc.message_type[index], msg_index[1:])
         else:
             if len(msg_index) == 1:
-                return desc.nested_types[index]
-            return self._get_message_desc(desc.nested_types[index], msg_index[1:])
+                return desc.nested_type[index]
+            return self._get_message_desc(desc.nested_type[index], msg_index[1:])
 
 
 def transform(ctx: RuleContext, descriptor: Descriptor, message: Any,
