@@ -52,7 +52,8 @@ from confluent_kafka.schema_registry.schema_registry_client import RuleSet, \
 from confluent_kafka.schema_registry.serde import RuleConditionError
 from confluent_kafka.serialization import SerializationContext, MessageField
 from tests.schema_registry.data.proto.example_pb2 import Author
-from .data.proto import example_pb2
+from .data.proto import example_pb2, nested_pb2
+
 
 class FakeClock(Clock):
 
@@ -98,6 +99,51 @@ def test_proto_basic_serialization():
         'use.deprecated.format': False
     }
     deser = ProtobufDeserializer(example_pb2.Author, deser_conf, client)
+    obj2 = deser(obj_bytes, ser_ctx)
+    assert obj == obj2
+
+
+def test_proto_second_message():
+    conf = {'url': _BASE_URL}
+    client = SchemaRegistryClient.new_client(conf)
+    ser_conf = {
+        'auto.register.schemas': True,
+        'use.deprecated.format': False
+    }
+    obj = example_pb2.Pizza(
+        size="large",
+        toppings=["cheese", "pepperoni"],
+    )
+    ser = ProtobufSerializer(example_pb2.Pizza, client, conf=ser_conf)
+    ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
+    obj_bytes = ser(obj, ser_ctx)
+
+    deser_conf = {
+        'use.deprecated.format': False
+    }
+    deser = ProtobufDeserializer(example_pb2.Pizza, deser_conf, client)
+    obj2 = deser(obj_bytes, ser_ctx)
+    assert obj == obj2
+
+
+def test_proto_nested_message():
+    conf = {'url': _BASE_URL}
+    client = SchemaRegistryClient.new_client(conf)
+    ser_conf = {
+        'auto.register.schemas': True,
+        'use.deprecated.format': False
+    }
+    obj = nested_pb2.NestedMessage.InnerMessage(
+        id="inner",
+    )
+    ser = ProtobufSerializer(nested_pb2.NestedMessage.InnerMessage, client, conf=ser_conf)
+    ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
+    obj_bytes = ser(obj, ser_ctx)
+
+    deser_conf = {
+        'use.deprecated.format': False
+    }
+    deser = ProtobufDeserializer(nested_pb2.NestedMessage.InnerMessage, deser_conf, client)
     obj2 = deser(obj_bytes, ser_ctx)
     assert obj == obj2
 

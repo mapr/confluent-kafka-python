@@ -21,7 +21,7 @@ import base64
 import struct
 import warnings
 from collections import deque
-from typing import Set, List, Union, Optional, Any
+from typing import Set, List, Union, Optional, Any, Tuple
 
 from google.protobuf import descriptor_pb2
 from google.protobuf import json_format
@@ -155,8 +155,6 @@ def _str_to_schema(schema_str: str) -> descriptor_pb2.FileDescriptorProto:
     """
 
     serialized_pb = base64.standard_b64decode(schema_str.encode('ascii'))
-    # TODO RAY is this right?
-    #return descriptor_pb2.FileDescriptorProto.FromString(serialized_pb)
     file_descriptor_proto = descriptor_pb2.FileDescriptorProto()
     try:
         file_descriptor_proto.ParseFromString(serialized_pb)
@@ -166,7 +164,7 @@ def _str_to_schema(schema_str: str) -> descriptor_pb2.FileDescriptorProto:
 
 
 def _resolve_named_schema(schema: Schema, schema_registry_client: SchemaRegistryClient,
-    pool: DescriptorPool = None) -> DescriptorPool:
+    pool: DescriptorPool) -> DescriptorPool:
     """
     Resolves named schemas referenced by the provided schema recursively.
     :param schema: Schema to resolve named schemas for.
@@ -174,8 +172,6 @@ def _resolve_named_schema(schema: Schema, schema_registry_client: SchemaRegistry
     :param pool: DescriptorPool to add resolved schemas to.
     :return: DescriptorPool
     """
-    if pool is None:
-        pool = DescriptorPool()
     if schema.references is not None:
         for ref in schema.references:
             referenced_schema = schema_registry_client.get_version(ref.subject, ref.version, True, 'serialized')
@@ -298,7 +294,7 @@ class ProtobufSerializer(BaseSerializer):
     """  # noqa: E501
     __slots__ = ['_skip_known_types', '_known_subjects', '_msg_class', '_index_array',
                  '_schema', '_schema_id', '_ref_reference_subject_func',
-                 '_use_deprecated_format', '_parsed_schemas']
+                 '_use_deprecated_format', '_parsed_schemas', '_pool']
 
     _default_conf = {
         'auto.register.schemas': True,
@@ -385,6 +381,7 @@ class ProtobufSerializer(BaseSerializer):
         self._known_subjects = set()
         self._msg_class = msg_type
         self._parsed_schemas = ParsedSchemaCache()
+        self._pool = DescriptorPool()
 
         descriptor = msg_type.DESCRIPTOR
         self._index_array = _create_index_array(descriptor)
@@ -541,7 +538,7 @@ class ProtobufSerializer(BaseSerializer):
         if fd is not None:
             return fd
 
-        pool = _resolve_named_schema(schema, self._registry)
+        pool = _resolve_named_schema(schema, self._registry, self._pool)
         fd_proto = _str_to_schema(schema.schema_str)
         pool.Add(fd_proto)
         fd = pool.FindFileByName(fd_proto.name)
@@ -599,7 +596,7 @@ class ProtobufDeserializer(BaseDeserializer):
     `Protobuf API reference <https://googleapis.dev/python/protobuf/latest/google/protobuf.html>`_
     """
 
-    __slots__ = ['_msg_class', '_index_array', '_use_deprecated_format', '_parsed_schemas']
+    __slots__ = ['_msg_class', '_index_array', '_use_deprecated_format', '_parsed_schemas', '_pool']
 
     _default_conf = {
         'use.latest.version': False,
@@ -619,6 +616,7 @@ class ProtobufDeserializer(BaseDeserializer):
         self._registry = schema_registry_client
         self._rule_registry = rule_registry if rule_registry else RuleRegistry.get_global_instance()
         self._parsed_schemas = ParsedSchemaCache()
+        self._pool = DescriptorPool();
 
         # Require use.deprecated.format to be explicitly configured
         # during a transitionary period since old/new format are
@@ -808,7 +806,10 @@ class ProtobufDeserializer(BaseDeserializer):
                 reader_schema_raw = writer_schema_raw
                 reader_schema = writer_schema
 
-            reader_desc = reader_schema.message_types_by_name[writer_desc.name]
+            file_desc_proto = descriptor_pb2.FileDescriptorProto()
+            reader_schema.CopyToProto(file_desc_proto)
+            self._pool.Add(file_desc_proto)
+            reader_desc = self._pool.FindMessageTypeByName(writer_desc.full_name)
 
             if migrations:
                 msg = GetMessageClass(writer_desc)()
@@ -842,7 +843,7 @@ class ProtobufDeserializer(BaseDeserializer):
         if fd is not None:
             return fd
 
-        pool = _resolve_named_schema(schema, self._registry)
+        pool = _resolve_named_schema(schema, self._registry, self._pool)
         fd_proto = _str_to_schema(schema.schema_str)
         pool.Add(fd_proto)
         fd = pool.FindFileByName(fd_proto.name)
@@ -850,25 +851,31 @@ class ProtobufDeserializer(BaseDeserializer):
         self._parsed_schemas.set(schema, fd)
         return fd
 
-    def _get_message_desc(self, desc: FileDescriptor,
+    def _get_message_desc(self, desc: Union[FileDescriptor, Descriptor],
         msg_index: List[int]) -> Descriptor:
         file_desc_proto = descriptor_pb2.FileDescriptorProto()
         desc.CopyToProto(file_desc_proto)
-        desc_proto = self._get_message_desc_proto(file_desc_proto, msg_index)
-        return desc.message_types_by_name[desc_proto.name]
+        (full_name, desc_proto) = self._get_message_desc_proto("", file_desc_proto, msg_index)
+        self._pool.Add(file_desc_proto)
+        return self._pool.FindMessageTypeByName(file_desc_proto.package + full_name)
 
     def _get_message_desc_proto(self,
+        path: str,
         desc: Union[descriptor_pb2.FileDescriptorProto, descriptor_pb2.DescriptorProto],
-        msg_index: List[int]) -> descriptor_pb2.DescriptorProto:
+        msg_index: List[int]) -> Tuple[str, descriptor_pb2.DescriptorProto]:
         index = msg_index[0]
         if isinstance(desc, descriptor_pb2.FileDescriptorProto):
+            msg = desc.message_type[index]
+            path = path + "." + msg.name
             if len(msg_index) == 1:
-                return desc.message_type[index]
-            return self._get_message_desc(desc.message_type[index], msg_index[1:])
+                return (path, msg)
+            return self._get_message_desc_proto(path, msg, msg_index[1:])
         else:
+            msg = desc.nested_type[index]
+            path = path + "." + msg.name
             if len(msg_index) == 1:
-                return desc.nested_type[index]
-            return self._get_message_desc(desc.nested_type[index], msg_index[1:])
+                return (path, msg)
+            return self._get_message_desc_proto(path, msg, msg_index[1:])
 
 
 def transform(ctx: RuleContext, descriptor: Descriptor, message: Any,
