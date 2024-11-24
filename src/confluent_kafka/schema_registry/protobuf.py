@@ -26,7 +26,6 @@ from typing import Set, List, Union, Optional, Any, Tuple
 from google.protobuf import descriptor_pb2
 from google.protobuf import json_format
 from google.protobuf.descriptor_pool import DescriptorPool
-from google.protobuf.pyext.cpp_message import GeneratedProtocolMessageType
 
 import confluent_kafka.schema_registry.confluent.meta_pb2 as meta_pb2
 
@@ -143,7 +142,21 @@ def _schema_to_str(file_descriptor: FileDescriptor) -> str:
     return base64.standard_b64encode(file_descriptor.serialized_pb).decode('ascii')
 
 
-def _str_to_schema(schema_str: str) -> descriptor_pb2.FileDescriptorProto:
+def _proto_to_str(file_descriptor_proto: descriptor_pb2.FileDescriptorProto) -> str:
+    """
+    Base64 encode a FileDescriptorProto
+
+    Args:
+        file_descriptor_proto (FileDescriptorProto): FileDescriptorProto to encode.
+
+    Returns:
+        str: Base64 encoded FileDescriptorProto
+    """
+
+    return base64.standard_b64encode(file_descriptor_proto.SerializeToString()).decode('ascii')
+
+
+def _str_to_proto(schema_str: str) -> descriptor_pb2.FileDescriptorProto:
     """
     Base64 decode a FileDescriptor
 
@@ -151,7 +164,7 @@ def _str_to_schema(schema_str: str) -> descriptor_pb2.FileDescriptorProto:
         schema_str (str): Base64 encoded FileDescriptorProto
 
     Returns:
-        FileDescriptorProto: FileDescriptor.
+        FileDescriptorProto: schema.
     """
 
     serialized_pb = base64.standard_b64decode(schema_str.encode('ascii'))
@@ -161,6 +174,22 @@ def _str_to_schema(schema_str: str) -> descriptor_pb2.FileDescriptorProto:
     except DecodeError as e:
         raise SerializationError(str(e))
     return file_descriptor_proto
+
+
+def _str_to_schema(pool: DescriptorPool, schema_str: str) -> FileDescriptor:
+    """
+    Base64 decode a FileDescriptor
+
+    Args:
+        schema_str (str): Base64 encoded FileDescriptorProto
+
+    Returns:
+        FileDescriptor: schema.
+    """
+
+    file_descriptor_proto = _str_to_proto(schema_str)
+    pool.Add(file_descriptor_proto)
+    return pool.FindFileByName(file_descriptor_proto.name)
 
 
 def _resolve_named_schema(schema: Schema, schema_registry_client: SchemaRegistryClient,
@@ -176,7 +205,7 @@ def _resolve_named_schema(schema: Schema, schema_registry_client: SchemaRegistry
         for ref in schema.references:
             referenced_schema = schema_registry_client.get_version(ref.subject, ref.version, True, 'serialized')
             pool = _resolve_named_schema(referenced_schema.schema, schema_registry_client, pool)
-            pool.Add(_str_to_schema(referenced_schema.schema.schema_str))
+            pool.Add(_str_to_proto(referenced_schema.schema.schema_str))
     return pool
 
 
@@ -282,7 +311,7 @@ class ProtobufSerializer(BaseSerializer):
     See `Subject name strategy <https://docs.confluent.io/current/schema-registry/serializer-formatter.html#subject-name-strategy>`_ for additional details.
 
     Args:
-        msg_type (GeneratedProtocolMessageType): Protobuf Message type.
+        msg_type (Message): Protobuf Message type.
 
         schema_registry_client (SchemaRegistryClient): Schema Registry
             client instance.
@@ -308,7 +337,7 @@ class ProtobufSerializer(BaseSerializer):
     }
 
     def __init__(self,
-        msg_type: GeneratedProtocolMessageType,
+        msg_type: Message,
         schema_registry_client: SchemaRegistryClient,
         conf: dict = None,
         rule_conf: dict = None,
@@ -539,10 +568,7 @@ class ProtobufSerializer(BaseSerializer):
             return fd
 
         pool = _resolve_named_schema(schema, self._registry, self._pool)
-        fd_proto = _str_to_schema(schema.schema_str)
-        pool.Add(fd_proto)
-        fd = pool.FindFileByName(fd_proto.name)
-
+        fd = _str_to_schema(pool, schema.schema_str)
         self._parsed_schemas.set(schema, fd)
         return fd
 
@@ -596,7 +622,7 @@ class ProtobufDeserializer(BaseDeserializer):
     `Protobuf API reference <https://googleapis.dev/python/protobuf/latest/google/protobuf.html>`_
     """
 
-    __slots__ = ['_msg_class', '_index_array', '_use_deprecated_format', '_parsed_schemas', '_pool']
+    __slots__ = ['_msg_class', '_use_deprecated_format', '_parsed_schemas', '_pool']
 
     _default_conf = {
         'use.latest.version': False,
@@ -659,7 +685,6 @@ class ProtobufDeserializer(BaseDeserializer):
                           "soon as possible")
 
         descriptor = message_type.DESCRIPTOR
-        self._index_array = _create_index_array(descriptor)
         self._msg_class = GetMessageClass(descriptor)
 
         for rule in self._rule_registry.get_executors():
@@ -844,10 +869,7 @@ class ProtobufDeserializer(BaseDeserializer):
             return fd
 
         pool = _resolve_named_schema(schema, self._registry, self._pool)
-        fd_proto = _str_to_schema(schema.schema_str)
-        pool.Add(fd_proto)
-        fd = pool.FindFileByName(fd_proto.name)
-
+        fd = _str_to_schema(pool, schema.schema_str)
         self._parsed_schemas.set(schema, fd)
         return fd
 

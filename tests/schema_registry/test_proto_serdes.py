@@ -15,19 +15,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-import json
 import time
-from datetime import datetime, timedelta
 
 import pytest
-from fastavro._logical_readers import UUID
 
 from confluent_kafka.schema_registry import SchemaRegistryClient, \
     Schema, Metadata, MetadataProperties
-from confluent_kafka.schema_registry.avro import AvroSerializer, \
-    AvroDeserializer
 from confluent_kafka.schema_registry.protobuf import ProtobufSerializer, \
-    ProtobufDeserializer
+    ProtobufDeserializer, _schema_to_str
 from confluent_kafka.schema_registry.rules.cel.cel_executor import CelExecutor
 from confluent_kafka.schema_registry.rules.cel.cel_field_executor import \
     CelFieldExecutor
@@ -51,7 +46,7 @@ from confluent_kafka.schema_registry.schema_registry_client import RuleSet, \
     Rule, RuleKind, RuleMode, SchemaReference, RuleParams
 from confluent_kafka.schema_registry.serde import RuleConditionError
 from confluent_kafka.serialization import SerializationContext, MessageField
-from .data.proto import example_pb2, nested_pb2, test_pb2, dep_pb2
+from .data.proto import example_pb2, nested_pb2, test_pb2, dep_pb2, cycle_pb2
 
 
 class FakeClock(Clock):
@@ -186,5 +181,80 @@ def test_proto_reference():
     deser = ProtobufDeserializer(dep_pb2.DependencyMessage, deser_conf, client)
     obj2 = deser(obj_bytes, ser_ctx)
     assert obj == obj2
+
+
+def test_proto_cycle():
+    conf = {'url': _BASE_URL}
+    client = SchemaRegistryClient.new_client(conf)
+    ser_conf = {
+        'auto.register.schemas': True,
+        'use.deprecated.format': False
+    }
+    inner = cycle_pb2.LinkedList(
+        value=100
+    )
+    obj = cycle_pb2.LinkedList(
+        value=200,
+        next=inner
+    )
+
+    ser = ProtobufSerializer(cycle_pb2.LinkedList, client, conf=ser_conf)
+    ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
+    obj_bytes = ser(obj, ser_ctx)
+
+    deser_conf = {
+        'use.deprecated.format': False
+    }
+    deser = ProtobufDeserializer(cycle_pb2.LinkedList, deser_conf, client)
+    obj2 = deser(obj_bytes, ser_ctx)
+    assert obj == obj2
+
+
+
+def test_proto_cel_condition():
+    conf = {'url': _BASE_URL}
+    client = SchemaRegistryClient.new_client(conf)
+    ser_conf = {
+        'auto.register.schemas': False,
+        'use.latest.version': True,
+        'use.deprecated.format': False
+    }
+    rule = Rule(
+        "test-cel",
+        "",
+        RuleKind.CONDITION,
+        RuleMode.WRITE,
+        "CEL",
+        None,
+        None,
+        "message.name == 'Kafka'",
+        None,
+        None,
+        False
+    )
+    client.register_schema(_SUBJECT, Schema(
+        _schema_to_str(example_pb2.Author.DESCRIPTOR.file),
+        "PROTOBUF",
+        [],
+        None,
+        RuleSet(None, [rule])
+    ))
+    obj = example_pb2.Author(
+        name='Kafka',
+        id=123,
+        picture=b'foobar',
+        works=['The Castle ', 'TheTrial']
+    )
+    ser = ProtobufSerializer(example_pb2.Author, client, conf=ser_conf)
+    ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
+    obj_bytes = ser(obj, ser_ctx)
+
+    deser_conf = {
+        'use.deprecated.format': False
+    }
+    deser = ProtobufDeserializer(example_pb2.Author, deser_conf, client)
+    obj2 = deser(obj_bytes, ser_ctx)
+    assert obj == obj2
+
 
 
