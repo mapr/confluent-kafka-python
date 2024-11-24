@@ -51,8 +51,7 @@ from confluent_kafka.schema_registry.schema_registry_client import RuleSet, \
     Rule, RuleKind, RuleMode, SchemaReference, RuleParams
 from confluent_kafka.schema_registry.serde import RuleConditionError
 from confluent_kafka.serialization import SerializationContext, MessageField
-from tests.schema_registry.data.proto.example_pb2 import Author
-from .data.proto import example_pb2, nested_pb2
+from .data.proto import example_pb2, nested_pb2, test_pb2, dep_pb2
 
 
 class FakeClock(Clock):
@@ -144,6 +143,47 @@ def test_proto_nested_message():
         'use.deprecated.format': False
     }
     deser = ProtobufDeserializer(nested_pb2.NestedMessage.InnerMessage, deser_conf, client)
+    obj2 = deser(obj_bytes, ser_ctx)
+    assert obj == obj2
+
+
+def test_proto_reference():
+    conf = {'url': _BASE_URL}
+    client = SchemaRegistryClient.new_client(conf)
+    ser_conf = {
+        'auto.register.schemas': True,
+        'use.deprecated.format': False
+    }
+    msg = test_pb2.TestMessage(
+        test_string="hi",
+        test_bool=True,
+        test_bytes=b'foobar',
+        test_double=1.23,
+        test_float=3.45,
+        test_fixed32=67,
+        test_fixed64=89,
+        test_int32=100,
+        test_int64=200,
+        test_sfixed32=300,
+        test_sfixed64=400,
+        test_sint32=500,
+        test_sint64=600,
+        test_uint32=700,
+        test_uint64=800,
+    )
+    obj = dep_pb2.DependencyMessage(
+        is_active=True,
+        test_message=msg
+    )
+
+    ser = ProtobufSerializer(dep_pb2.DependencyMessage, client, conf=ser_conf)
+    ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
+    obj_bytes = ser(obj, ser_ctx)
+
+    deser_conf = {
+        'use.deprecated.format': False
+    }
+    deser = ProtobufDeserializer(dep_pb2.DependencyMessage, deser_conf, client)
     obj2 = deser(obj_bytes, ser_ctx)
     assert obj == obj2
 
