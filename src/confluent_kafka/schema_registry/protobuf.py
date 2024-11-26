@@ -918,12 +918,12 @@ def transform(ctx: RuleContext, descriptor: Descriptor, message: Any,
     if field_ctx is not None:
         rule_tags = ctx.rule.tags
         if not rule_tags or not _disjoint(set(rule_tags), field_ctx.tags):
-            field_transform(ctx, field_ctx, message)
+            return field_transform(ctx, field_ctx, message)
     return message
 
 
 def _transform_field(ctx: RuleContext, fd: FieldDescriptor, desc: Descriptor,
-    message: Any, field_transform: FieldTransform):
+    message: Message, field_transform: FieldTransform):
     try:
         ctx.enter_field(
             message,
@@ -933,18 +933,35 @@ def _transform_field(ctx: RuleContext, fd: FieldDescriptor, desc: Descriptor,
             get_inline_tags(fd)
         )
         value = getattr(message, fd.name)
+        if fd.label == FieldDescriptor.LABEL_REPEATED:
+            value = [item for item in value]
+        elif is_map_field(fd):
+            value = {key: value[key] for key in value}
         new_value = transform(ctx, desc, value, field_transform)
         if ctx.rule.kind == RuleKind.CONDITION:
             if new_value is False:
                 raise RuleConditionError(ctx.rule)
         else:
-            setattr(message, fd.name, new_value)
+            _set_field(fd, message, new_value)
     finally:
         ctx.exit_field()
 
+def _set_field(fd: FieldDescriptor, message: Message, value: Any):
+    if isinstance(value, list):
+        message.ClearField(fd.name)
+        old_value = getattr(message, fd.name)
+        old_value.extend(value)
+    elif isinstance(value, dict):
+        message.ClearField(fd.name)
+        old_value = getattr(message, fd.name)
+        old_value.update(value)
+    else:
+        setattr(message, fd.name, value)
+
 
 def get_type(fd: FieldDescriptor, desc: Descriptor) -> FieldType:
-    if desc._is_map_entry:
+    # TODO RAY check
+    if is_map_field(fd):
         return FieldType.MAP
     if fd.type == FieldDescriptor.TYPE_MESSAGE:
         return FieldType.RECORD
@@ -967,6 +984,10 @@ def get_type(fd: FieldDescriptor, desc: Descriptor) -> FieldType:
     if fd.type == FieldDescriptor.TYPE_BOOL:
         return FieldType.BOOLEAN
     return FieldType.NULL
+
+def is_map_field(fd: FieldDescriptor):
+    return (fd.type == FieldDescriptor.TYPE_MESSAGE
+            and fd.message_type.options.map_entry)
 
 
 def get_inline_tags(fd: FieldDescriptor) -> Set[str]:

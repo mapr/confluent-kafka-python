@@ -210,7 +210,6 @@ def test_proto_cycle():
     assert obj == obj2
 
 
-
 def test_proto_cel_condition():
     conf = {'url': _BASE_URL}
     client = SchemaRegistryClient.new_client(conf)
@@ -256,5 +255,98 @@ def test_proto_cel_condition():
     obj2 = deser(obj_bytes, ser_ctx)
     assert obj == obj2
 
+
+def test_proto_cel_condition_fail():
+    conf = {'url': _BASE_URL}
+    client = SchemaRegistryClient.new_client(conf)
+    ser_conf = {
+        'auto.register.schemas': False,
+        'use.latest.version': True,
+        'use.deprecated.format': False
+    }
+    rule = Rule(
+        "test-cel",
+        "",
+        RuleKind.CONDITION,
+        RuleMode.WRITE,
+        "CEL",
+        None,
+        None,
+        "message.name != 'Kafka'",
+        None,
+        None,
+        False
+    )
+    client.register_schema(_SUBJECT, Schema(
+        _schema_to_str(example_pb2.Author.DESCRIPTOR.file),
+        "PROTOBUF",
+        [],
+        None,
+        RuleSet(None, [rule])
+    ))
+    obj = example_pb2.Author(
+        name='Kafka',
+        id=123,
+        picture=b'foobar',
+        works=['The Castle ', 'TheTrial']
+    )
+    ser = ProtobufSerializer(example_pb2.Author, client, conf=ser_conf)
+    ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
+    try:
+        obj_bytes = ser(obj, ser_ctx)
+    except Exception as e:
+        assert isinstance(e.__cause__, RuleConditionError)
+
+
+def test_proto_cel_field_transform():
+    conf = {'url': _BASE_URL}
+    client = SchemaRegistryClient.new_client(conf)
+    ser_conf = {
+        'auto.register.schemas': False,
+        'use.latest.version': True,
+        'use.deprecated.format': False
+    }
+    rule = Rule(
+        "test-cel",
+        "",
+        RuleKind.TRANSFORM,
+        RuleMode.WRITE,
+        "CEL_FIELD",
+        None,
+        None,
+        "name == 'name' ; value + '-suffix'",
+        None,
+        None,
+        False
+    )
+    client.register_schema(_SUBJECT, Schema(
+        _schema_to_str(example_pb2.Author.DESCRIPTOR.file),
+        "PROTOBUF",
+        [],
+        None,
+        RuleSet(None, [rule])
+    ))
+    obj = example_pb2.Author(
+        name='Kafka',
+        id=123,
+        picture=b'foobar',
+        works=['The Castle ', 'TheTrial']
+    )
+    ser = ProtobufSerializer(example_pb2.Author, client, conf=ser_conf)
+    ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
+    obj_bytes = ser(obj, ser_ctx)
+
+    obj2 = example_pb2.Author(
+        name='Kafka-suffix',
+        id=123,
+        picture=b'foobar',
+        works=['The Castle ', 'TheTrial']
+    )
+    deser_conf = {
+        'use.deprecated.format': False
+    }
+    deser = ProtobufDeserializer(example_pb2.Author, deser_conf, client)
+    newobj = deser(obj_bytes, ser_ctx)
+    assert obj2 == newobj
 
 
