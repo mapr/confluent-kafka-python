@@ -13,10 +13,8 @@
 # limitations under the License.
 
 import hashlib
-import os
 from typing import Optional
 
-import tink
 from hkdf import hkdf_extract, hkdf_expand
 from tink import KmsClient, aead
 from tink.core import Registry
@@ -25,10 +23,6 @@ from tink.proto import common_pb2, tink_pb2, hkdf_prf_pb2, aes_gcm_pb2
 
 class LocalKmsClient(KmsClient):
     def __init__(self, secret: Optional[str] = None):
-        if secret is None:
-            secret = os.getenv("LOCAL_SECRET")
-        if secret is None:
-            raise tink.TinkError("cannot load secret")
         self._aead = self._get_primitive(secret)
 
     def _get_primitive(self, secret: str) -> aead.Aead:

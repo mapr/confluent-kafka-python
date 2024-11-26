@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import os
 
 import tink
 
@@ -38,10 +39,10 @@ class HcVaultKmsDriver(KmsDriver):
         if key_url is not None:
             uri_prefix = key_url
         token = conf.get(_TOKEN_ID)
-        if token is None:
-            raise tink.TinkError("token.id must be set")
         namespace = conf.get(_NAMESPACE)
-
+        if token is None:
+            token = os.getenv("VAULT_TOKEN")
+            namespace = os.getenv("VAULT_NAMESPACE")
         return HcVaultKmsClient(uri_prefix, token, namespace)
 
     @classmethod

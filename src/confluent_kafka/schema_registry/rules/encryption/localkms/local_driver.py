@@ -11,7 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import os
 
+import tink
 from tink import KmsClient
 
 from confluent_kafka.schema_registry.rules.encryption.kms_driver_registry import \
@@ -32,6 +34,10 @@ class LocalKmsDriver(KmsDriver):
 
     def new_kms_client(self, conf: dict, key_url: str) -> KmsClient:
         secret = conf.get(_SECRET)
+        if secret is None:
+            secret = os.getenv("LOCAL_SECRET")
+        if secret is None:
+            raise tink.TinkError("cannot load secret")
         return LocalKmsClient(secret)
 
     @classmethod
