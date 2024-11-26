@@ -350,3 +350,147 @@ def test_proto_cel_field_transform():
     assert obj2 == newobj
 
 
+def test_proto_cel_field_condition():
+    conf = {'url': _BASE_URL}
+    client = SchemaRegistryClient.new_client(conf)
+    ser_conf = {
+        'auto.register.schemas': False,
+        'use.latest.version': True,
+        'use.deprecated.format': False
+    }
+    rule = Rule(
+        "test-cel",
+        "",
+        RuleKind.CONDITION,
+        RuleMode.WRITE,
+        "CEL_FIELD",
+        None,
+        None,
+        "name == 'name' ; value == 'Kafka'",
+        None,
+        None,
+        False
+    )
+    client.register_schema(_SUBJECT, Schema(
+        _schema_to_str(example_pb2.Author.DESCRIPTOR.file),
+        "PROTOBUF",
+        [],
+        None,
+        RuleSet(None, [rule])
+    ))
+    obj = example_pb2.Author(
+        name='Kafka',
+        id=123,
+        picture=b'foobar',
+        works=['The Castle ', 'TheTrial']
+    )
+    ser = ProtobufSerializer(example_pb2.Author, client, conf=ser_conf)
+    ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
+    obj_bytes = ser(obj, ser_ctx)
+
+    deser_conf = {
+        'use.deprecated.format': False
+    }
+    deser = ProtobufDeserializer(example_pb2.Author, deser_conf, client)
+    newobj = deser(obj_bytes, ser_ctx)
+    assert obj == newobj
+
+
+def test_proto_cel_field_condition_fail():
+    conf = {'url': _BASE_URL}
+    client = SchemaRegistryClient.new_client(conf)
+    ser_conf = {
+        'auto.register.schemas': False,
+        'use.latest.version': True,
+        'use.deprecated.format': False
+    }
+    rule = Rule(
+        "test-cel",
+        "",
+        RuleKind.CONDITION,
+        RuleMode.WRITE,
+        "CEL_FIELD",
+        None,
+        None,
+        "name == 'name' ; value != 'Kafka'",
+        None,
+        None,
+        False
+    )
+    client.register_schema(_SUBJECT, Schema(
+        _schema_to_str(example_pb2.Author.DESCRIPTOR.file),
+        "PROTOBUF",
+        [],
+        None,
+        RuleSet(None, [rule])
+    ))
+    obj = example_pb2.Author(
+        name='Kafka',
+        id=123,
+        picture=b'foobar',
+        works=['The Castle ', 'TheTrial']
+    )
+    ser = ProtobufSerializer(example_pb2.Author, client, conf=ser_conf)
+    ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
+    try:
+        obj_bytes = ser(obj, ser_ctx)
+    except Exception as e:
+        assert isinstance(e.__cause__, RuleConditionError)
+
+
+def test_proto_encryption():
+    executor = FieldEncryptionExecutor.register_with_clock(FakeClock())
+
+    conf = {'url': _BASE_URL}
+    client = SchemaRegistryClient.new_client(conf)
+    ser_conf = {
+        'auto.register.schemas': False,
+        'use.latest.version': True,
+        'use.deprecated.format': False
+    }
+    rule = Rule(
+        "test-encrypt",
+        "",
+        RuleKind.TRANSFORM,
+        RuleMode.WRITEREAD,
+        "ENCRYPT",
+        ["PII"],
+        RuleParams({
+            "encrypt.kek.name": "kek1",
+            "encrypt.kms.type": "local-kms",
+            "encrypt.kms.key.id": "mykey"
+        }),
+        None,
+        None,
+        "ERROR,NONE",
+        False
+    )
+    client.register_schema(_SUBJECT, Schema(
+        _schema_to_str(example_pb2.Author.DESCRIPTOR.file),
+        "PROTOBUF",
+        [],
+        None,
+        RuleSet(None, [rule])
+    ))
+    obj = example_pb2.Author(
+        name='Kafka',
+        id=123,
+        picture=b'foobar',
+        works=['The Castle ', 'TheTrial']
+    )
+    ser = ProtobufSerializer(example_pb2.Author, client, conf=ser_conf)
+    dek_client = executor.client
+    ser_ctx = SerializationContext(_TOPIC, MessageField.VALUE)
+    obj_bytes = ser(obj, ser_ctx)
+
+    # don't need to reset encrypted fields as original obj was cloned
+
+    deser_conf = {
+        'use.deprecated.format': False
+    }
+    deser = ProtobufDeserializer(example_pb2.Author, deser_conf, client)
+    executor.client = dek_client
+    obj2 = deser(obj_bytes, ser_ctx)
+    assert obj == obj2
+
+
