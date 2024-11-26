@@ -933,10 +933,10 @@ def _transform_field(ctx: RuleContext, fd: FieldDescriptor, desc: Descriptor,
             get_inline_tags(fd)
         )
         value = getattr(message, fd.name)
-        if fd.label == FieldDescriptor.LABEL_REPEATED:
-            value = [item for item in value]
-        elif is_map_field(fd):
+        if is_map_field(fd):
             value = {key: value[key] for key in value}
+        elif fd.label == FieldDescriptor.LABEL_REPEATED:
+            value = [item for item in value]
         new_value = transform(ctx, desc, value, field_transform)
         if ctx.rule.kind == RuleKind.CONDITION:
             if new_value is False:
